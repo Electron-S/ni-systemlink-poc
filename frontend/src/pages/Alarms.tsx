@@ -15,15 +15,18 @@ const { Text } = Typography
 const SEV_COLOR: Record<string, string> = {
   critical: 'error', warning: 'warning', info: 'processing',
 }
-const SEV_BG: Record<string, string> = {
-  critical: '#fff1f0', warning: '#fffbe6', info: '#e6f7ff',
+const SEV_LABEL: Record<string, string> = {
+  critical: '심각', warning: '경고', info: '정보',
+}
+const CAT_LABEL: Record<string, string> = {
+  connection: '연결', performance: '성능', calibration: '교정', system: '시스템',
 }
 
 export default function Alarms() {
-  const [alarms, setAlarms] = useState<Alarm[]>([])
-  const [loading, setLoading] = useState(true)
+  const [alarms, setAlarms]     = useState<Alarm[]>([])
+  const [loading, setLoading]   = useState(true)
   const [ackModal, setAckModal] = useState<{ id: number; msg: string } | null>(null)
-  const [ackBy, setAckBy] = useState('Admin')
+  const [ackBy, setAckBy]       = useState('Admin')
 
   const load = () => {
     setLoading(true)
@@ -35,7 +38,7 @@ export default function Alarms() {
   const handleAck = async () => {
     if (!ackModal) return
     await api.patch(`/alarms/${ackModal.id}/acknowledge`, null, { params: { acknowledged_by: ackBy } })
-    message.success('Alarm acknowledged')
+    message.success('알람이 확인 처리되었습니다')
     setAckModal(null)
     load()
   }
@@ -47,17 +50,20 @@ export default function Alarms() {
 
   const buildColumns = (showAck: boolean) => [
     {
-      title: 'Severity', dataIndex: 'severity', width: 100,
-      render: (v: string) => <Tag color={SEV_COLOR[v]}>{v.toUpperCase()}</Tag>,
+      title: '심각도', dataIndex: 'severity', width: 90,
+      render: (v: string) => <Tag color={SEV_COLOR[v]}>{SEV_LABEL[v] ?? v}</Tag>,
     },
-    { title: 'Category', dataIndex: 'category', width: 120, render: (v: string) => <Tag>{v}</Tag> },
     {
-      title: 'Asset', dataIndex: 'asset_name', width: 170,
+      title: '분류', dataIndex: 'category', width: 100,
+      render: (v: string) => <Tag>{CAT_LABEL[v] ?? v}</Tag>,
+    },
+    {
+      title: '자산', dataIndex: 'asset_name', width: 170,
       render: (v: string) => <Text code style={{ fontSize: 12 }}>{v ?? '—'}</Text>,
     },
-    { title: 'Message', dataIndex: 'message', ellipsis: true },
+    { title: '내용', dataIndex: 'message', ellipsis: true },
     {
-      title: 'Triggered', dataIndex: 'triggered_at', width: 130,
+      title: '발생 시각', dataIndex: 'triggered_at', width: 130,
       render: (v: string) => (
         <span title={dayjs(v).format('YYYY-MM-DD HH:mm:ss')}>{dayjs(v).fromNow()}</span>
       ),
@@ -66,24 +72,24 @@ export default function Alarms() {
     },
     ...(showAck
       ? [{
-          title: '', width: 100,
+          title: '', width: 80,
           render: (_: unknown, r: Alarm) => (
             <Button
               size="small"
               icon={<CheckOutlined />}
               onClick={() => setAckModal({ id: r.id, msg: r.message })}
             >
-              Ack
+              확인
             </Button>
           ),
         }]
       : [
           {
-            title: 'Ack By', dataIndex: 'acknowledged_by', width: 130,
+            title: '확인자', dataIndex: 'acknowledged_by', width: 120,
             render: (v: string) => v ?? '—',
           },
           {
-            title: 'Ack At', dataIndex: 'acknowledged_at', width: 130,
+            title: '확인 시각', dataIndex: 'acknowledged_at', width: 130,
             render: (v: string | null) => v ? dayjs(v).format('MM/DD HH:mm') : '—',
           },
         ]),
@@ -94,34 +100,38 @@ export default function Alarms() {
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={12} sm={6}>
           <Card size="small">
-            <Statistic title="Active Alarms" value={active.length}
-              prefix={<BellOutlined />} valueStyle={{ color: active.length > 0 ? '#ff4d4f' : '#52c41a' }} />
+            <Statistic
+              title="활성 알람"
+              value={active.length}
+              prefix={<BellOutlined />}
+              valueStyle={{ color: active.length > 0 ? '#ff4d4f' : '#52c41a' }}
+            />
           </Card>
         </Col>
         <Col xs={12} sm={6}>
           <Card size="small">
-            <Statistic title="Critical" value={critical.length} valueStyle={{ color: '#ff4d4f' }} />
+            <Statistic title="심각" value={critical.length} valueStyle={{ color: '#ff4d4f' }} />
           </Card>
         </Col>
         <Col xs={12} sm={6}>
           <Card size="small">
-            <Statistic title="Warnings" value={warnings.length} valueStyle={{ color: '#faad14' }} />
+            <Statistic title="경고" value={warnings.length} valueStyle={{ color: '#faad14' }} />
           </Card>
         </Col>
         <Col xs={12} sm={6}>
           <Card size="small">
-            <Statistic title="Resolved (total)" value={resolved.length} valueStyle={{ color: '#52c41a' }} />
+            <Statistic title="해결 완료" value={resolved.length} valueStyle={{ color: '#52c41a' }} />
           </Card>
         </Col>
       </Row>
 
-      <Card extra={<Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>}>
+      <Card extra={<Button icon={<ReloadOutlined />} onClick={load}>새로고침</Button>}>
         <Tabs
           defaultActiveKey="active"
           items={[
             {
               key: 'active',
-              label: <span><Badge count={active.length} offset={[8, 0]} color="#ff4d4f">Active Alarms</Badge></span>,
+              label: <Badge count={active.length} offset={[8, 0]} color="#ff4d4f">활성 알람</Badge>,
               children: (
                 <Table
                   dataSource={active}
@@ -130,14 +140,13 @@ export default function Alarms() {
                   loading={loading}
                   size="small"
                   pagination={{ pageSize: 15 }}
-                  rowClassName={r => r.severity === 'critical' ? 'alarm-critical' : ''}
-                  style={{ '--critical-bg': '#fff1f0' } as React.CSSProperties}
+                  locale={{ emptyText: '활성 알람이 없습니다' }}
                 />
               ),
             },
             {
               key: 'resolved',
-              label: `Resolved (${resolved.length})`,
+              label: `해결됨 (${resolved.length})`,
               children: (
                 <Table
                   dataSource={resolved}
@@ -153,17 +162,17 @@ export default function Alarms() {
         />
       </Card>
 
-      {/* Ack modal */}
       <Modal
-        title="Acknowledge Alarm"
+        title="알람 확인 처리"
         open={!!ackModal}
         onOk={handleAck}
         onCancel={() => setAckModal(null)}
-        okText="Acknowledge"
+        okText="확인 처리"
+        cancelText="취소"
       >
-        <p style={{ marginBottom: 12 }}><Text type="secondary">{ackModal?.msg}</Text></p>
+        <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>{ackModal?.msg}</Text>
         <Input
-          addonBefore="Acknowledged by"
+          addonBefore="확인자"
           value={ackBy}
           onChange={e => setAckBy(e.target.value)}
         />

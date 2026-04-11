@@ -1,7 +1,6 @@
 import asyncio
 import json
 import random
-import time
 from contextlib import asynccontextmanager
 from typing import List
 
@@ -37,7 +36,8 @@ class ConnectionManager:
         self.active.append(ws)
 
     def disconnect(self, ws: WebSocket):
-        self.active.remove(ws)
+        if ws in self.active:
+            self.active.remove(ws)
 
     async def broadcast(self, data: dict):
         dead = []
@@ -52,9 +52,43 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+# ── Smooth metric state (previous values per asset) ──────────────────────────
+_metric_state: dict = {}
+
+
+def _smooth_metrics(asset_id: int) -> dict:
+    """Generate realistic-looking metrics that drift gradually from the previous value."""
+    prev = _metric_state.get(asset_id)
+
+    def drift(v: float, lo: float, hi: float, d: float) -> float:
+        return round(max(lo, min(hi, v + random.uniform(-d, d))), 2)
+
+    if prev is None:
+        rng = random.Random(asset_id)
+        m = {
+            "asset_id":        asset_id,
+            "temperature_c":   round(rng.uniform(40, 60), 1),
+            "cpu_pct":         round(rng.uniform(20, 60), 1),
+            "memory_pct":      round(rng.uniform(30, 60), 1),
+            "voltage_v":       round(rng.uniform(4.98, 5.02), 3),
+            "channels_active": rng.randint(2, 6),
+        }
+    else:
+        m = {
+            "asset_id":        asset_id,
+            "temperature_c":   drift(prev["temperature_c"], 35, 75, 1.5),
+            "cpu_pct":         drift(prev["cpu_pct"],       5,  95, 4.0),
+            "memory_pct":      drift(prev["memory_pct"],    20, 80, 2.0),
+            "voltage_v":       round(max(4.90, min(5.10, prev["voltage_v"] + random.uniform(-0.003, 0.003))), 3),
+            "channels_active": prev["channels_active"],
+        }
+
+    _metric_state[asset_id] = m
+    return m
+
 
 async def realtime_emitter():
-    """Push simulated asset metrics to all WebSocket clients every 2 s."""
+    """Push gradually-drifting asset metrics to all WebSocket clients every 2 s."""
     db: Session = SessionLocal()
     try:
         asset_ids = [a.id for a in db.query(models.Asset.id).all()]
@@ -65,18 +99,7 @@ async def realtime_emitter():
         await asyncio.sleep(2)
         if not manager.active:
             continue
-        t = int(time.time())
-        metrics = []
-        for aid in asset_ids:
-            rng = random.Random(aid + t // 2)
-            metrics.append({
-                "asset_id":      aid,
-                "temperature_c": round(rng.uniform(35, 72), 1),
-                "cpu_pct":       round(rng.uniform(5, 95), 1),
-                "memory_pct":    round(rng.uniform(20, 80), 1),
-                "voltage_v":     round(rng.uniform(4.95, 5.05), 3),
-                "channels_active": rng.randint(0, 8),
-            })
+        metrics = [_smooth_metrics(aid) for aid in asset_ids]
         await manager.broadcast({"type": "metrics", "data": metrics})
 
 
@@ -116,6 +139,6 @@ async def ws_endpoint(ws: WebSocket):
     await manager.connect(ws)
     try:
         while True:
-            await ws.receive_text()  # keep connection alive
+            await ws.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(ws)

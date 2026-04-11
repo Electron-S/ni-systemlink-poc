@@ -1,8 +1,20 @@
-import { useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { AssetMetrics } from '../api/client'
 
+interface WSContextType {
+  metrics: Record<number, AssetMetrics>
+  connected: boolean
+}
+
+export const WSContext = createContext<WSContextType>({ metrics: {}, connected: false })
+
 export function useRealtimeMetrics() {
+  return useContext(WSContext)
+}
+
+export function useWebSocketProvider(): WSContextType {
   const [metrics, setMetrics] = useState<Record<number, AssetMetrics>>({})
+  const [connected, setConnected] = useState(false)
   const ws = useRef<WebSocket | null>(null)
 
   useEffect(() => {
@@ -10,18 +22,19 @@ export function useRealtimeMetrics() {
       const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
       ws.current = new WebSocket(`${protocol}://${window.location.host}/ws/realtime`)
 
+      ws.current.onopen = () => setConnected(true)
+
       ws.current.onmessage = (e) => {
         const msg = JSON.parse(e.data)
         if (msg.type === 'metrics') {
           const map: Record<number, AssetMetrics> = {}
-          for (const m of msg.data as AssetMetrics[]) {
-            map[m.asset_id] = m
-          }
+          for (const m of msg.data as AssetMetrics[]) map[m.asset_id] = m
           setMetrics(map)
         }
       }
 
       ws.current.onclose = () => {
+        setConnected(false)
         setTimeout(connect, 3000)
       }
     }
@@ -30,5 +43,5 @@ export function useRealtimeMetrics() {
     return () => ws.current?.close()
   }, [])
 
-  return metrics
+  return { metrics, connected }
 }

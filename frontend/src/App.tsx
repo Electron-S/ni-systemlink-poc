@@ -12,23 +12,25 @@ import Assets from './pages/Assets'
 import Deployments from './pages/Deployments'
 import TestResults from './pages/TestResults'
 import Alarms from './pages/Alarms'
+import { WSContext, useWebSocketProvider, useRealtimeMetrics } from './hooks/useWebSocket'
 
 const { Sider, Header, Content } = Layout
 const { Title } = Typography
 
 const NAV = [
-  { key: '/',            label: '대시보드',      icon: <DashboardOutlined /> },
-  { key: '/assets',      label: '자산 관리',     icon: <DeploymentUnitOutlined /> },
-  { key: '/deployments', label: '소프트웨어 배포', icon: <CloudUploadOutlined /> },
-  { key: '/test-results',label: '테스트 결과',   icon: <ExperimentOutlined /> },
-  { key: '/alarms',      label: '알람',          icon: <BellOutlined /> },
+  { key: '/',            label: '대시보드',        icon: <DashboardOutlined /> },
+  { key: '/assets',      label: '자산 관리',        icon: <DeploymentUnitOutlined /> },
+  { key: '/deployments', label: '소프트웨어 배포',  icon: <CloudUploadOutlined /> },
+  { key: '/test-results',label: '테스트 결과',      icon: <ExperimentOutlined /> },
+  { key: '/alarms',      label: '알람',             icon: <BellOutlined /> },
 ]
 
-export default function App() {
+function AppLayout() {
   const location = useLocation()
   const { token } = theme.useToken()
+  const { connected } = useRealtimeMetrics()
 
-  const current = NAV.find(n => n.key === location.pathname)?.label ?? 'Dashboard'
+  const current = NAV.find(n => n.key === location.pathname)?.label ?? '대시보드'
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -43,7 +45,6 @@ export default function App() {
           flexDirection: 'column',
         }}
       >
-        {/* Logo */}
         <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 24 }}>⚙️</span>
@@ -85,9 +86,10 @@ export default function App() {
         }}>
           <Title level={4} style={{ margin: 0, color: token.colorTextHeading }}>{current}</Title>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, color: token.colorTextSecondary, fontSize: 13 }}>
-            <Badge dot status="processing">
-              <span style={{ cursor: 'pointer' }}>Live</span>
-            </Badge>
+            <Badge
+              status={connected ? 'processing' : 'error'}
+              text={connected ? '실시간 연결됨' : '연결 끊김'}
+            />
             <span>Admin</span>
           </div>
         </Header>
@@ -103,5 +105,15 @@ export default function App() {
         </Content>
       </Layout>
     </Layout>
+  )
+}
+
+export default function App() {
+  const wsValue = useWebSocketProvider()
+
+  return (
+    <WSContext.Provider value={wsValue}>
+      <AppLayout />
+    </WSContext.Provider>
   )
 }

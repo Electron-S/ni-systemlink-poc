@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from .database import engine, SessionLocal
 from . import models
 from .dummy_data import seed
+from .simulator import SimulationEngine
 from .routers import assets, deployments, test_results, alarms, systems
 
 
@@ -43,7 +44,7 @@ class ConnectionManager:
         dead = []
         for ws in self.active:
             try:
-                await ws.send_text(json.dumps(data))
+                await ws.send_text(json.dumps(data, ensure_ascii=False))
             except Exception:
                 dead.append(ws)
         for ws in dead:
@@ -52,12 +53,11 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-# ── Smooth metric state (previous values per asset) ──────────────────────────
+# ── Smooth metric state ───────────────────────────────────────────────────────
 _metric_state: dict = {}
 
 
 def _smooth_metrics(asset_id: int) -> dict:
-    """Generate realistic-looking metrics that drift gradually from the previous value."""
     prev = _metric_state.get(asset_id)
 
     def drift(v: float, lo: float, hi: float, d: float) -> float:
@@ -88,7 +88,7 @@ def _smooth_metrics(asset_id: int) -> dict:
 
 
 async def realtime_emitter():
-    """Push gradually-drifting asset metrics to all WebSocket clients every 2 s."""
+    """2초마다 메트릭 전송"""
     db: Session = SessionLocal()
     try:
         asset_ids = [a.id for a in db.query(models.Asset.id).all()]
@@ -108,9 +108,12 @@ async def realtime_emitter():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    task = asyncio.create_task(realtime_emitter())
+    sim = SimulationEngine(SessionLocal, manager)
+    t1 = asyncio.create_task(realtime_emitter())
+    t2 = asyncio.create_task(sim.run())
     yield
-    task.cancel()
+    t1.cancel()
+    t2.cancel()
 
 
 app = FastAPI(title="NI SystemLink PoC", version="0.1.0", lifespan=lifespan)

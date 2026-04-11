@@ -1,47 +1,73 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
-import { AssetMetrics } from '../api/client'
+import { AssetMetrics, WSEvent } from '../api/client'
 
 interface WSContextType {
-  metrics: Record<number, AssetMetrics>
+  metrics:   Record<number, AssetMetrics>
+  events:    WSEvent[]
   connected: boolean
 }
 
-export const WSContext = createContext<WSContextType>({ metrics: {}, connected: false })
+export const WSContext = createContext<WSContextType>({
+  metrics: {}, events: [], connected: false,
+})
 
 export function useRealtimeMetrics() {
   return useContext(WSContext)
 }
 
 export function useWebSocketProvider(): WSContextType {
-  const [metrics, setMetrics] = useState<Record<number, AssetMetrics>>({})
+  const [metrics,   setMetrics]   = useState<Record<number, AssetMetrics>>({})
+  const [events,    setEvents]    = useState<WSEvent[]>([])
   const [connected, setConnected] = useState(false)
-  const ws = useRef<WebSocket | null>(null)
+  const ws        = useRef<WebSocket | null>(null)
+  const cancelled = useRef(false)   // unmount 플래그 (재연결 루프 방지)
 
   useEffect(() => {
+    cancelled.current = false
+
     const connect = () => {
+      if (cancelled.current) return
+
       const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-      ws.current = new WebSocket(`${protocol}://${window.location.host}/ws/realtime`)
+      const socket = new WebSocket(`${protocol}://${window.location.host}/ws/realtime`)
+      ws.current = socket
 
-      ws.current.onopen = () => setConnected(true)
+      socket.onopen = () => {
+        if (!cancelled.current) setConnected(true)
+      }
 
-      ws.current.onmessage = (e) => {
+      socket.onmessage = (e) => {
+        if (cancelled.current) return
         const msg = JSON.parse(e.data)
+
         if (msg.type === 'metrics') {
           const map: Record<number, AssetMetrics> = {}
           for (const m of msg.data as AssetMetrics[]) map[m.asset_id] = m
           setMetrics(map)
+        } else if (msg.type === 'event') {
+          const event: WSEvent = {
+            id:         `${Date.now()}-${Math.random()}`,
+            event_type: msg.event_type,
+            data:       msg.data,
+          }
+          setEvents(prev => [event, ...prev].slice(0, 50))
         }
       }
 
-      ws.current.onclose = () => {
+      socket.onclose = () => {
+        if (cancelled.current) return  // 언마운트 시 재연결 안 함
         setConnected(false)
         setTimeout(connect, 3000)
       }
     }
 
     connect()
-    return () => ws.current?.close()
+
+    return () => {
+      cancelled.current = true
+      ws.current?.close()
+    }
   }, [])
 
-  return { metrics, connected }
+  return { metrics, events, connected }
 }

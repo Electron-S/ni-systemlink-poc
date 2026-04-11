@@ -31,7 +31,7 @@ export default function Assets() {
   const [search, setSearch]   = useState('')
   const [selected, setSelected] = useState<Asset | null>(null)
   const [history, setHistory]   = useState<AssetMetrics[]>([])
-  const { metrics: liveMetrics } = useRealtimeMetrics()
+  const { metrics: liveMetrics, events } = useRealtimeMetrics()
 
   const load = () => {
     setLoading(true)
@@ -39,6 +39,17 @@ export default function Assets() {
   }
 
   useEffect(load, [])
+
+  // 장비 상태 변경 이벤트 실시간 반영
+  useEffect(() => {
+    if (events.length === 0) return
+    const e = events[0]
+    if (e.event_type === 'asset_status') {
+      setAssets(prev => prev.map(a =>
+        a.id === e.data.id ? { ...a, status: e.data.new_status } : a
+      ))
+    }
+  }, [events.length > 0 ? events[0].id : null])
 
   useEffect(() => {
     if (!selected) return

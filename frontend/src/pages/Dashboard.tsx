@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Row, Col, Card, Statistic, Tag, Table, Spin, Typography, Space } from 'antd'
+import { Row, Col, Card, Statistic, Tag, Table, Spin, Typography, Space, Timeline, Badge } from 'antd'
 import {
   CheckCircleOutlined, CloseCircleOutlined, WarningOutlined,
   BellOutlined, RocketOutlined, ExperimentOutlined,
@@ -8,7 +8,8 @@ import {
   PieChart, Pie, Cell, Tooltip, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
 } from 'recharts'
-import api, { SystemOverview, Alarm, TestStats } from '../api/client'
+import api, { SystemOverview, Alarm, TestStats, WSEvent } from '../api/client'
+import { useRealtimeMetrics } from '../hooks/useWebSocket'
 import dayjs from 'dayjs'
 
 const { Text } = Typography
@@ -20,10 +21,50 @@ const SEV_COLOR: Record<string, string> = {
   critical: '#ff4d4f', warning: '#faad14', info: '#1890ff',
 }
 
+// ── 이벤트 피드 헬퍼 ──────────────────────────────────────────────────────────
+
+function eventDotColor(e: WSEvent): string {
+  if (e.event_type === 'alarm_triggered')
+    return e.data.severity === 'critical' ? '#ff4d4f' : '#faad14'
+  if (e.event_type === 'test_completed')
+    return e.data.status === 'pass' ? '#52c41a' : '#ff4d4f'
+  if (e.event_type === 'asset_status') {
+    const c: Record<string, string> = { online: '#52c41a', warning: '#faad14', error: '#ff4d4f', offline: '#8c8c8c' }
+    return c[e.data.new_status] ?? '#1890ff'
+  }
+  return '#1890ff'
+}
+
+const STATUS_KO: Record<string, string> = {
+  online: '온라인', offline: '오프라인', warning: '경고', error: '오류',
+}
+const TEST_STATUS_KO: Record<string, string> = { pass: '합격', fail: '불합격', error: '오류' }
+
+function eventText(e: WSEvent): string {
+  const d = e.data
+  switch (e.event_type) {
+    case 'test_completed':
+      return `${d.asset_name} — ${d.test_name} [${TEST_STATUS_KO[d.status] ?? d.status}] (${d.duration?.toFixed(1)}초)`
+    case 'alarm_triggered':
+      return d.message
+    case 'asset_status':
+      return `${d.name}: ${STATUS_KO[d.old_status] ?? d.old_status} → ${STATUS_KO[d.new_status] ?? d.new_status}`
+    case 'deployment_progress':
+      return `배포 진행: ${d.name} (${d.success_count}/${d.total})`
+    case 'deployment_done':
+      return `배포 완료: ${d.name} (성공 ${d.success}건)`
+    default:
+      return JSON.stringify(d)
+  }
+}
+
+// ── 메인 컴포넌트 ─────────────────────────────────────────────────────────────
+
 export default function Dashboard() {
   const [overview, setOverview] = useState<SystemOverview | null>(null)
-  const [alarms, setAlarms]   = useState<Alarm[]>([])
-  const [stats, setStats]     = useState<TestStats | null>(null)
+  const [alarms, setAlarms]     = useState<Alarm[]>([])
+  const [stats, setStats]       = useState<TestStats | null>(null)
+  const { events }              = useRealtimeMetrics()
 
   useEffect(() => {
     const fetch = () => {
@@ -32,9 +73,21 @@ export default function Dashboard() {
       api.get<TestStats>('/test-results/stats', { params: { days: 7 } }).then(r => setStats(r.data))
     }
     fetch()
-    const interval = setInterval(fetch, 30_000) // 30초마다 자동 갱신
+    const interval = setInterval(fetch, 30_000)
     return () => clearInterval(interval)
   }, [])
+
+  // 이벤트 발생 시 KPI 갱신
+  useEffect(() => {
+    if (events.length === 0) return
+    const e = events[0]
+    if (['alarm_triggered', 'asset_status', 'test_completed', 'deployment_done'].includes(e.event_type)) {
+      api.get<SystemOverview>('/systems/overview').then(r => setOverview(r.data))
+    }
+    if (e.event_type === 'alarm_triggered') {
+      api.get<Alarm[]>('/alarms', { params: { active_only: true } }).then(r => setAlarms(r.data.slice(0, 5)))
+    }
+  }, [events.length > 0 ? events[0].id : null])
 
   if (!overview) return <Spin size="large" style={{ display: 'block', margin: '100px auto' }} />
 
@@ -47,7 +100,7 @@ export default function Dashboard() {
 
   const alarmColumns = [
     {
-      title: '심각도', dataIndex: 'severity', width: 100,
+      title: '심각도', dataIndex: 'severity', width: 90,
       render: (v: string) => {
         const label: Record<string, string> = { critical: '심각', warning: '경고', info: '정보' }
         return <Tag color={SEV_COLOR[v]}>{label[v] ?? v}</Tag>
@@ -63,7 +116,7 @@ export default function Dashboard() {
 
   return (
     <div>
-      {/* ── KPI 카드 ── */}
+      {/* KPI 카드 */}
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} lg={6}>
           <Card className="stat-card">
@@ -115,6 +168,7 @@ export default function Dashboard() {
       </Row>
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        {/* 자산 상태 도넛 */}
         <Col xs={24} lg={8}>
           <Card title="자산 상태 현황" style={{ height: 320 }}>
             <ResponsiveContainer width="100%" height={230}>
@@ -129,6 +183,7 @@ export default function Dashboard() {
           </Card>
         </Col>
 
+        {/* 7일 합격률 차트 */}
         <Col xs={24} lg={16}>
           <Card title="7일 테스트 합격률 (%)" style={{ height: 320 }}>
             <ResponsiveContainer width="100%" height={230}>
@@ -145,7 +200,8 @@ export default function Dashboard() {
       </Row>
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24}>
+        {/* 최근 활성 알람 */}
+        <Col xs={24} lg={14}>
           <Card title={<Space><BellOutlined style={{ color: '#ff4d4f' }} />최근 활성 알람</Space>}>
             <Table
               dataSource={alarms}
@@ -157,8 +213,34 @@ export default function Dashboard() {
             />
           </Card>
         </Col>
+
+        {/* 실시간 이벤트 피드 */}
+        <Col xs={24} lg={10}>
+          <Card
+            title="실시간 이벤트 피드"
+            extra={<Badge status="processing" text="live" />}
+            style={{ minHeight: 200 }}
+          >
+            {events.length === 0 ? (
+              <Text type="secondary">이벤트 대기 중…</Text>
+            ) : (
+              <Timeline
+                style={{ marginTop: 8 }}
+                items={events.slice(0, 8).map(e => ({
+                  color: eventDotColor(e),
+                  children: (
+                    <div style={{ fontSize: 12 }}>
+                      <div style={{ color: '#595959', lineHeight: 1.4 }}>{eventText(e)}</div>
+                    </div>
+                  ),
+                }))}
+              />
+            )}
+          </Card>
+        </Col>
       </Row>
 
+      {/* 자산 상태 그리드 */}
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col xs={24}>
           <AssetHealthGrid />
@@ -170,10 +252,22 @@ export default function Dashboard() {
 
 function AssetHealthGrid() {
   const [assets, setAssets] = useState<{ id: number; name: string; status: string; asset_type: string; location: string }[]>([])
+  const { events } = useRealtimeMetrics()
 
   useEffect(() => {
     api.get('/assets').then(r => setAssets(r.data))
   }, [])
+
+  // 장비 상태 변경 이벤트 반영
+  useEffect(() => {
+    if (events.length === 0) return
+    const e = events[0]
+    if (e.event_type === 'asset_status') {
+      setAssets(prev => prev.map(a =>
+        a.id === e.data.id ? { ...a, status: e.data.new_status } : a
+      ))
+    }
+  }, [events.length > 0 ? events[0].id : null])
 
   return (
     <Card title="자산 상태 그리드">
@@ -185,6 +279,7 @@ function AssetHealthGrid() {
               borderRadius: 8,
               padding: '10px 12px',
               background: `${STATUS_COLORS[a.status]}15`,
+              transition: 'all 0.4s ease',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 {a.status === 'online'  && <CheckCircleOutlined style={{ color: STATUS_COLORS.online }} />}

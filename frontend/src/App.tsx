@@ -1,39 +1,73 @@
+import { useEffect, useRef } from 'react'
 import { Routes, Route, NavLink, useLocation } from 'react-router-dom'
-import { Layout, Menu, Typography, Badge, theme } from 'antd'
+import { Layout, Menu, Typography, Badge, theme, notification } from 'antd'
 import {
-  DashboardOutlined,
-  DeploymentUnitOutlined,
-  CloudUploadOutlined,
-  ExperimentOutlined,
-  BellOutlined,
+  DashboardOutlined, DeploymentUnitOutlined,
+  CloudUploadOutlined, ExperimentOutlined, BellOutlined,
 } from '@ant-design/icons'
-import Dashboard from './pages/Dashboard'
-import Assets from './pages/Assets'
-import Deployments from './pages/Deployments'
-import TestResults from './pages/TestResults'
-import Alarms from './pages/Alarms'
+import Dashboard    from './pages/Dashboard'
+import Assets       from './pages/Assets'
+import Deployments  from './pages/Deployments'
+import TestResults  from './pages/TestResults'
+import Alarms       from './pages/Alarms'
 import { WSContext, useWebSocketProvider, useRealtimeMetrics } from './hooks/useWebSocket'
 
 const { Sider, Header, Content } = Layout
 const { Title } = Typography
 
 const NAV = [
-  { key: '/',            label: '대시보드',        icon: <DashboardOutlined /> },
-  { key: '/assets',      label: '자산 관리',        icon: <DeploymentUnitOutlined /> },
-  { key: '/deployments', label: '소프트웨어 배포',  icon: <CloudUploadOutlined /> },
-  { key: '/test-results',label: '테스트 결과',      icon: <ExperimentOutlined /> },
-  { key: '/alarms',      label: '알람',             icon: <BellOutlined /> },
+  { key: '/',            label: '대시보드',       icon: <DashboardOutlined /> },
+  { key: '/assets',      label: '자산 관리',       icon: <DeploymentUnitOutlined /> },
+  { key: '/deployments', label: '소프트웨어 배포', icon: <CloudUploadOutlined /> },
+  { key: '/test-results',label: '테스트 결과',     icon: <ExperimentOutlined /> },
+  { key: '/alarms',      label: '알람',            icon: <BellOutlined /> },
 ]
 
 function AppLayout() {
   const location = useLocation()
   const { token } = theme.useToken()
-  const { connected } = useRealtimeMetrics()
+  const { connected, events } = useRealtimeMetrics()
+  const lastEventId = useRef<string | null>(null)
+  const [api, contextHolder] = notification.useNotification()
 
   const current = NAV.find(n => n.key === location.pathname)?.label ?? '대시보드'
 
+  // 새 이벤트 발생 시 토스트 알림
+  useEffect(() => {
+    if (events.length === 0) return
+    const latest = events[0]
+    if (lastEventId.current === latest.id) return
+    lastEventId.current = latest.id
+
+    const d = latest.data
+
+    if (latest.event_type === 'alarm_triggered' && d.severity === 'critical') {
+      api.error({
+        message: '심각 알람 발생',
+        description: d.message,
+        placement: 'bottomRight',
+        duration: 6,
+      })
+    } else if (latest.event_type === 'test_completed' && d.status === 'fail') {
+      api.warning({
+        message: '테스트 불합격',
+        description: `${d.asset_name} — ${d.test_name}`,
+        placement: 'bottomRight',
+        duration: 4,
+      })
+    } else if (latest.event_type === 'deployment_done') {
+      api.success({
+        message: '배포 완료',
+        description: `${d.name} 배포가 완료됐습니다 (성공 ${d.success}건)`,
+        placement: 'bottomRight',
+        duration: 4,
+      })
+    }
+  }, [events])
+
   return (
     <Layout style={{ minHeight: '100vh' }}>
+      {contextHolder}
       <Sider
         width={220}
         style={{
@@ -110,7 +144,6 @@ function AppLayout() {
 
 export default function App() {
   const wsValue = useWebSocketProvider()
-
   return (
     <WSContext.Provider value={wsValue}>
       <AppLayout />

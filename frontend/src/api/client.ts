@@ -98,3 +98,14 @@ export interface AssetMetrics {
   voltage_v: number
   channels_active: number
 }
+
+export interface WSEvent {
+  id: string   // 프론트에서 생성 (타임스탬프 기반)
+  event_type:
+    | 'test_completed'
+    | 'alarm_triggered'
+    | 'asset_status'
+    | 'deployment_progress'
+    | 'deployment_done'
+  data: Record<string, any>
+}

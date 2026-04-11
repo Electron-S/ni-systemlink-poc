@@ -3,6 +3,32 @@ from typing import Optional, List, Any, Dict
 from datetime import datetime
 
 
+# ── User / APIKey / AuditLog ──────────────────────────────────────────────────
+
+class UserOut(BaseModel):
+    id: int
+    username: str
+    full_name: Optional[str]
+    email: Optional[str]
+    role: str
+    is_active: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AuditLogOut(BaseModel):
+    id: int
+    user_identifier: str
+    action: str
+    resource_type: str
+    resource_id: Optional[int]
+    detail: Dict[str, Any]
+    timestamp: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # ── Asset ────────────────────────────────────────────────────────────────────
 
 class AssetBase(BaseModel):
@@ -38,9 +64,21 @@ class DeploymentCreate(BaseModel):
     name: str
     package_name: str
     package_version: str
-    target_assets: List[int]
+    target_asset_ids: List[int]
     created_by: str
     notes: Optional[str] = None
+
+
+class DeploymentTargetOut(BaseModel):
+    id: int
+    asset_id: int
+    asset_name: Optional[str] = None
+    status: str   # pending / running / succeeded / failed / skipped
+    log: Optional[str]
+    started_at: Optional[datetime]
+    completed_at: Optional[datetime]
+
+    model_config = {"from_attributes": True}
 
 
 class DeploymentOut(BaseModel):
@@ -48,8 +86,8 @@ class DeploymentOut(BaseModel):
     name: str
     package_name: str
     package_version: str
-    target_assets: List[int]
-    status: str
+    targets: List[DeploymentTargetOut]
+    status: str   # pending / queued / running / succeeded / failed / cancelled
     created_by: str
     created_at: datetime
     started_at: Optional[datetime]
@@ -112,3 +150,46 @@ class SystemOverview(BaseModel):
     deployments_running: int
     test_pass_rate: float
     total_tests_today: int
+
+
+# ── Agent ─────────────────────────────────────────────────────────────────────
+
+class HeartbeatPayload(BaseModel):
+    hostname: str
+    version: str
+    ip_address: Optional[str] = None
+    capabilities: List[str] = []
+
+
+class InventoryItem(BaseModel):
+    package_name: str
+    version: str
+    install_path: Optional[str] = None
+
+
+class InventoryPayload(BaseModel):
+    packages: List[InventoryItem]
+
+
+class AgentInventoryOut(BaseModel):
+    id: int
+    package_name: str
+    version: str
+    install_path: Optional[str]
+    recorded_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AgentOut(BaseModel):
+    id: int
+    agent_id: str
+    hostname: str
+    version: str
+    status: str
+    last_heartbeat: Optional[datetime]
+    ip_address: Optional[str]
+    capabilities: List[str]
+    inventory: List[AgentInventoryOut]
+
+    model_config = {"from_attributes": True}

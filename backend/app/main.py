@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import random
 from contextlib import asynccontextmanager
 from typing import List
@@ -8,25 +9,14 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-from .database import engine, SessionLocal
-from . import models
+from .database import SessionLocal
 from .dummy_data import seed
 from .simulator import SimulationEngine
-from .routers import assets, deployments, test_results, alarms, systems
+from .worker import DeploymentWorker
+from .routers import assets, deployments, test_results, alarms, systems, agents, audit_logs
 
 
-# ── DB init ───────────────────────────────────────────────────────────────────
-
-def init_db():
-    models.Base.metadata.create_all(bind=engine)
-    db: Session = SessionLocal()
-    try:
-        seed(db)
-    finally:
-        db.close()
-
-
-# ── WebSocket manager ─────────────────────────────────────────────────────────
+# ── WebSocket 연결 관리자 ─────────────────────────────────────────────────────
 
 class ConnectionManager:
     def __init__(self):
@@ -53,7 +43,7 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-# ── Smooth metric state ───────────────────────────────────────────────────────
+# ── 스무스 메트릭 상태 ────────────────────────────────────────────────────────
 _metric_state: dict = {}
 
 
@@ -88,9 +78,10 @@ def _smooth_metrics(asset_id: int) -> dict:
 
 
 async def realtime_emitter():
-    """2초마다 메트릭 전송"""
+    """2초마다 모든 장비 메트릭 전송."""
     db: Session = SessionLocal()
     try:
+        from . import models
         asset_ids = [a.id for a in db.query(models.Asset.id).all()]
     finally:
         db.close()
@@ -103,24 +94,36 @@ async def realtime_emitter():
         await manager.broadcast({"type": "metrics", "data": metrics})
 
 
-# ── App lifecycle ─────────────────────────────────────────────────────────────
+# ── App 라이프사이클 ──────────────────────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
-    sim = SimulationEngine(SessionLocal, manager)
+    # DB 시드
+    db: Session = SessionLocal()
+    try:
+        seed(db)
+    finally:
+        db.close()
+
+    sim    = SimulationEngine(SessionLocal, manager)
+    worker = DeploymentWorker(SessionLocal, manager)
     t1 = asyncio.create_task(realtime_emitter())
     t2 = asyncio.create_task(sim.run())
+    t3 = asyncio.create_task(worker.run())
     yield
     t1.cancel()
     t2.cancel()
+    t3.cancel()
 
 
-app = FastAPI(title="NI SystemLink PoC", version="0.1.0", lifespan=lifespan)
+# ── FastAPI 앱 ────────────────────────────────────────────────────────────────
 
+app = FastAPI(title="NI SystemLink PoC — PMIC", version="0.2.0", lifespan=lifespan)
+
+_cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -130,11 +133,27 @@ app.include_router(deployments.router)
 app.include_router(test_results.router)
 app.include_router(alarms.router)
 app.include_router(systems.router)
+app.include_router(agents.router)
+app.include_router(audit_logs.router)
 
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/ready")
+def ready():
+    """DB 연결 확인용 readiness probe."""
+    db: Session = SessionLocal()
+    try:
+        db.execute(__import__("sqlalchemy").text("SELECT 1"))
+        return {"status": "ready"}
+    except Exception as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail=str(e))
+    finally:
+        db.close()
 
 
 @app.websocket("/ws/realtime")

@@ -4,13 +4,53 @@ from sqlalchemy.sql import func
 from .database import Base
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(64), unique=True, index=True, nullable=False)
+    full_name = Column(String(128))
+    email = Column(String(256), unique=True)
+    role = Column(String(32), default="viewer")   # admin / engineer / viewer
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
+
+
+class APIKey(Base):
+    __tablename__ = "api_keys"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key_hash = Column(String(64), unique=True, index=True, nullable=False)  # SHA-256 hex
+    label = Column(String(128))
+    user_id = Column(Integer, ForeignKey("users.id"))
+    is_active = Column(Boolean, default=True)
+    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    user = relationship("User", back_populates="api_keys")
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_identifier = Column(String(128))   # username or api_key label
+    action = Column(String(64))             # CREATE / UPDATE / DELETE / ACK / QUEUE / CANCEL
+    resource_type = Column(String(64))      # Asset / Deployment / Alarm / ...
+    resource_id = Column(Integer, nullable=True)
+    detail = Column(JSON, default={})
+    timestamp = Column(DateTime, server_default=func.now(), index=True)
+
+
 class Asset(Base):
     __tablename__ = "assets"
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True)
     model = Column(String)
-    asset_type = Column(String)          # DAQ / Oscilloscope / SMU / DMM / Chassis / Controller / GPIB
+    asset_type = Column(String)          # SMU / DMM / Oscilloscope / Chassis / DAQ / Power Supply
     serial_number = Column(String, unique=True)
     ip_address = Column(String, nullable=True)
     location = Column(String)
@@ -34,8 +74,8 @@ class Deployment(Base):
     name = Column(String)
     package_name = Column(String)
     package_version = Column(String)
-    target_assets = Column(JSON, default=[])   # list of asset IDs
-    status = Column(String, default="pending") # pending / running / completed / failed
+    # State machine: pending → queued → running → succeeded / failed / cancelled
+    status = Column(String, default="pending")
     created_by = Column(String)
     created_at = Column(DateTime, server_default=func.now())
     started_at = Column(DateTime, nullable=True)
@@ -43,6 +83,23 @@ class Deployment(Base):
     success_count = Column(Integer, default=0)
     fail_count = Column(Integer, default=0)
     notes = Column(Text, nullable=True)
+
+    targets = relationship("DeploymentTarget", back_populates="deployment", cascade="all, delete-orphan")
+
+
+class DeploymentTarget(Base):
+    __tablename__ = "deployment_targets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    deployment_id = Column(Integer, ForeignKey("deployments.id"), nullable=False)
+    asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False)
+    status = Column(String, default="pending")  # pending / running / succeeded / failed / skipped
+    log = Column(Text, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    deployment = relationship("Deployment", back_populates="targets")
+    asset = relationship("Asset")
 
 
 class TestResult(Base):
@@ -76,3 +133,31 @@ class Alarm(Base):
     acknowledged_by = Column(String, nullable=True)
 
     asset = relationship("Asset", back_populates="alarms")
+
+
+class AgentNode(Base):
+    __tablename__ = "agent_nodes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    agent_id = Column(String(128), unique=True, index=True)
+    hostname = Column(String(256))
+    version = Column(String(32))
+    status = Column(String(32), default="offline")   # online / offline
+    last_heartbeat = Column(DateTime, nullable=True)
+    ip_address = Column(String(64), nullable=True)
+    capabilities = Column(JSON, default=[])
+
+    inventory = relationship("AgentInventory", back_populates="agent", cascade="all, delete-orphan")
+
+
+class AgentInventory(Base):
+    __tablename__ = "agent_inventory"
+
+    id = Column(Integer, primary_key=True, index=True)
+    agent_id = Column(Integer, ForeignKey("agent_nodes.id"), nullable=False)
+    package_name = Column(String(256))
+    version = Column(String(64))
+    install_path = Column(String(512), nullable=True)
+    recorded_at = Column(DateTime, server_default=func.now())
+
+    agent = relationship("AgentNode", back_populates="inventory")

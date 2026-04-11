@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from .. import models, schemas
 from ..database import get_db
+from ..auth import require_engineer
 
 router = APIRouter(prefix="/api/test-results", tags=["test_results"])
 
@@ -34,7 +35,11 @@ def list_results(
 
 
 @router.post("", response_model=schemas.TestResultOut, status_code=201)
-def create_result(payload: schemas.TestResultCreate, db: Session = Depends(get_db)):
+def create_result(
+    payload: schemas.TestResultCreate,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(require_engineer),
+):
     result = models.TestResult(**payload.model_dump())
     db.add(result)
     db.commit()

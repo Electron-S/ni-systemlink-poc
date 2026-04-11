@@ -1,6 +1,17 @@
 import axios from 'axios'
 
+// 쓰기 작업용 API 키 (실제 환경에서는 로그인 플로우로 획득)
+const ADMIN_API_KEY = 'sl-admin-key-2024'
+
 const api = axios.create({ baseURL: '/api' })
+
+// 쓰기 요청에 X-API-Key 헤더 자동 추가
+api.interceptors.request.use(cfg => {
+  if (cfg.method && ['post', 'patch', 'put', 'delete'].includes(cfg.method)) {
+    cfg.headers['X-API-Key'] = ADMIN_API_KEY
+  }
+  return cfg
+})
 
 export default api
 
@@ -24,13 +35,23 @@ export interface Asset {
   tags: Record<string, string>
 }
 
+export interface DeploymentTarget {
+  id: number
+  asset_id: number
+  asset_name: string | null
+  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped'
+  log: string | null
+  started_at: string | null
+  completed_at: string | null
+}
+
 export interface Deployment {
   id: number
   name: string
   package_name: string
   package_version: string
-  target_assets: number[]
-  status: 'pending' | 'running' | 'completed' | 'failed'
+  targets: DeploymentTarget[]
+  status: 'pending' | 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
   created_by: string
   created_at: string
   started_at: string | null
@@ -97,6 +118,36 @@ export interface AssetMetrics {
   memory_pct: number
   voltage_v: number
   channels_active: number
+}
+
+export interface AgentInventory {
+  id: number
+  package_name: string
+  version: string
+  install_path: string | null
+  recorded_at: string
+}
+
+export interface AgentNode {
+  id: number
+  agent_id: string
+  hostname: string
+  version: string
+  status: 'online' | 'offline'
+  last_heartbeat: string | null
+  ip_address: string | null
+  capabilities: string[]
+  inventory: AgentInventory[]
+}
+
+export interface AuditLog {
+  id: number
+  user_identifier: string
+  action: string
+  resource_type: string
+  resource_id: number | null
+  detail: Record<string, any>
+  timestamp: string
 }
 
 export interface WSEvent {

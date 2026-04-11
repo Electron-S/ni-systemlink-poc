@@ -1,144 +1,307 @@
-"""Seed the database with realistic NI hardware dummy data."""
+"""PMIC 개발팀 환경에 맞는 시드 데이터 — 장비/테스트/알람/배포/사용자."""
+import hashlib
+import os
 import random
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from . import models
 
+# ── API Key 해시 헬퍼 ─────────────────────────────────────────────────────────
 
-NI_ASSETS = [
-    {"name": "cDAQ-9174-LAB01", "model": "NI cDAQ-9174",  "asset_type": "Chassis",      "serial_number": "1A2B3C01", "ip_address": "192.168.1.101", "location": "Lab 1", "department": "R&D",        "firmware_version": "2.3.1", "driver_version": "23.3.0", "channel_count": 32},
-    {"name": "cDAQ-9174-LAB02", "model": "NI cDAQ-9174",  "asset_type": "Chassis",      "serial_number": "1A2B3C02", "ip_address": "192.168.1.102", "location": "Lab 1", "department": "R&D",        "firmware_version": "2.3.1", "driver_version": "23.3.0", "channel_count": 32},
-    {"name": "PXIe-1082-FAC01", "model": "NI PXIe-1082",  "asset_type": "Chassis",      "serial_number": "2D4E5F01", "ip_address": "192.168.1.111", "location": "Factory A", "department": "QA",      "firmware_version": "1.9.0", "driver_version": "23.3.0", "channel_count": 8},
-    {"name": "PXIe-1082-FAC02", "model": "NI PXIe-1082",  "asset_type": "Chassis",      "serial_number": "2D4E5F02", "ip_address": "192.168.1.112", "location": "Factory B", "department": "QA",      "firmware_version": "1.9.0", "driver_version": "23.1.0", "channel_count": 8},
-    {"name": "USB-6001-WS01",   "model": "NI USB-6001",   "asset_type": "DAQ",          "serial_number": "3G6H7I01", "ip_address": None,            "location": "Lab 2", "department": "Test",       "firmware_version": "1.0.0", "driver_version": "23.3.0", "channel_count": 8},
-    {"name": "USB-6001-WS02",   "model": "NI USB-6001",   "asset_type": "DAQ",          "serial_number": "3G6H7I02", "ip_address": None,            "location": "Lab 2", "department": "Test",       "firmware_version": "1.0.0", "driver_version": "23.0.0", "channel_count": 8},
-    {"name": "PXIe-4081-QA01",  "model": "NI PXIe-4081",  "asset_type": "DMM",          "serial_number": "4J8K9L01", "ip_address": "192.168.1.121", "location": "Factory A", "department": "QA",      "firmware_version": "3.1.2", "driver_version": "23.3.0", "channel_count": 1},
-    {"name": "PXIe-5122-RD01",  "model": "NI PXIe-5122",  "asset_type": "Oscilloscope", "serial_number": "5M0N1O01", "ip_address": "192.168.1.131", "location": "Lab 1", "department": "R&D",        "firmware_version": "4.0.1", "driver_version": "23.3.0", "channel_count": 2},
-    {"name": "SMU-4141-RD01",   "model": "NI SMU-4141",   "asset_type": "SMU",          "serial_number": "6P2Q3R01", "ip_address": "192.168.1.141", "location": "Lab 3", "department": "R&D",        "firmware_version": "2.0.0", "driver_version": "23.2.0", "channel_count": 4},
-    {"name": "cRIO-9068-FAC01", "model": "NI cRIO-9068",  "asset_type": "Controller",   "serial_number": "7S4T5U01", "ip_address": "192.168.1.151", "location": "Factory A", "department": "Automation","firmware_version": "8.6.0", "driver_version": "23.3.0", "channel_count": 8},
-    {"name": "cRIO-9068-FAC02", "model": "NI cRIO-9068",  "asset_type": "Controller",   "serial_number": "7S4T5U02", "ip_address": "192.168.1.152", "location": "Factory B", "department": "Automation","firmware_version": "8.5.0", "driver_version": "23.1.0", "channel_count": 8},
-    {"name": "GPIB-USB-HS-01",  "model": "NI GPIB-USB-HS","asset_type": "GPIB",         "serial_number": "8V6W7X01", "ip_address": None,            "location": "Lab 2", "department": "Test",       "firmware_version": "1.5.2", "driver_version": "23.3.0", "channel_count": 0},
+def _hash(key: str) -> str:
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+# ── PMIC 장비 목록 ────────────────────────────────────────────────────────────
+
+PMIC_ASSETS = [
+    # PXIe 섀시
+    {"name": "PXIe-1084-LAB1-01", "model": "NI PXIe-1084",  "asset_type": "Chassis",
+     "serial_number": "A1B2C3D001", "ip_address": "192.168.10.101",
+     "location": "PMIC Lab 1", "department": "설계1팀",
+     "firmware_version": "2.4.0", "driver_version": "23.5.0", "channel_count": 14},
+    {"name": "PXIe-1084-LAB2-01", "model": "NI PXIe-1084",  "asset_type": "Chassis",
+     "serial_number": "A1B2C3D002", "ip_address": "192.168.10.102",
+     "location": "PMIC Lab 2", "department": "검증팀",
+     "firmware_version": "2.4.0", "driver_version": "23.5.0", "channel_count": 14},
+    {"name": "PXIe-1082-EMC-01",  "model": "NI PXIe-1082",  "asset_type": "Chassis",
+     "serial_number": "A1B2C3D003", "ip_address": "192.168.10.121",
+     "location": "EMC룸", "department": "신뢰성팀",
+     "firmware_version": "1.9.2", "driver_version": "23.3.0", "channel_count": 8},
+    # SMU (Source Measurement Unit)
+    {"name": "PXIe-4162-LAB1-01", "model": "NI PXIe-4162",  "asset_type": "SMU",
+     "serial_number": "E4F5G6H001", "ip_address": "192.168.10.111",
+     "location": "PMIC Lab 1", "department": "설계1팀",
+     "firmware_version": "3.1.0", "driver_version": "23.5.0", "channel_count": 4},
+    {"name": "PXIe-4162-LAB1-02", "model": "NI PXIe-4162",  "asset_type": "SMU",
+     "serial_number": "E4F5G6H002", "ip_address": "192.168.10.112",
+     "location": "PMIC Lab 1", "department": "설계2팀",
+     "firmware_version": "3.1.0", "driver_version": "23.5.0", "channel_count": 4},
+    {"name": "PXIe-4163-LAB2-01", "model": "NI PXIe-4163",  "asset_type": "SMU",
+     "serial_number": "E4F5G6H003", "ip_address": "192.168.10.113",
+     "location": "PMIC Lab 2", "department": "검증팀",
+     "firmware_version": "3.0.1", "driver_version": "23.3.0", "channel_count": 8},
+    # DMM (Digital Multimeter)
+    {"name": "PXIe-4081-LAB1-01", "model": "NI PXIe-4081",  "asset_type": "DMM",
+     "serial_number": "I7J8K9L001", "ip_address": "192.168.10.131",
+     "location": "PMIC Lab 1", "department": "설계1팀",
+     "firmware_version": "4.2.1", "driver_version": "23.5.0", "channel_count": 1},
+    {"name": "PXIe-4081-LAB2-01", "model": "NI PXIe-4081",  "asset_type": "DMM",
+     "serial_number": "I7J8K9L002", "ip_address": "192.168.10.132",
+     "location": "PMIC Lab 2", "department": "검증팀",
+     "firmware_version": "4.2.0", "driver_version": "23.3.0", "channel_count": 1},
+    # 오실로스코프
+    {"name": "PXIe-5124-LAB1-01", "model": "NI PXIe-5124",  "asset_type": "Oscilloscope",
+     "serial_number": "M0N1O2P001", "ip_address": "192.168.10.141",
+     "location": "PMIC Lab 1", "department": "설계1팀",
+     "firmware_version": "5.0.2", "driver_version": "23.5.0", "channel_count": 2},
+    {"name": "PXIe-5124-REL-01",  "model": "NI PXIe-5124",  "asset_type": "Oscilloscope",
+     "serial_number": "M0N1O2P002", "ip_address": "192.168.10.142",
+     "location": "신뢰성실", "department": "신뢰성팀",
+     "firmware_version": "5.0.1", "driver_version": "23.3.0", "channel_count": 2},
+    # 전자 부하 (Electronic Load)
+    {"name": "PXIe-4051-LAB2-01", "model": "NI PXIe-4051",  "asset_type": "Electronic Load",
+     "serial_number": "Q3R4S5T001", "ip_address": "192.168.10.151",
+     "location": "PMIC Lab 2", "department": "검증팀",
+     "firmware_version": "2.0.0", "driver_version": "23.5.0", "channel_count": 4},
+    # 타이밍 모듈
+    {"name": "PXIe-6674T-LAB1-01", "model": "NI PXIe-6674T", "asset_type": "Timing",
+     "serial_number": "U6V7W8X001", "ip_address": "192.168.10.161",
+     "location": "PMIC Lab 1", "department": "설계2팀",
+     "firmware_version": "1.3.0", "driver_version": "23.5.0", "channel_count": 0},
 ]
 
 STATUSES = ["online", "online", "online", "online", "online", "warning", "offline", "error"]
 
+# ── PMIC 테스트 항목 ──────────────────────────────────────────────────────────
+
 TEST_NAMES = [
-    "Voltage Accuracy Check", "Current Measurement Test", "Frequency Response Test",
-    "Noise Floor Analysis", "Signal-to-Noise Ratio", "Channel Crosstalk Test",
-    "Calibration Verification", "Temperature Coefficient Test", "Linearity Test",
-    "Settling Time Test", "Bandwidth Test", "Impedance Measurement",
+    "출력 전압 정확도 검사",   # Output Voltage Accuracy
+    "부하 레귤레이션 측정",    # Load Regulation
+    "라인 레귤레이션 측정",    # Line Regulation
+    "전력 변환 효율 분석",     # Conversion Efficiency
+    "출력 리플 전압 측정",     # Output Ripple
+    "전원 공급 노이즈 제거비", # PSRR
+    "과전류 보호 검증",        # OCP
+    "저전압 잠금 검증",        # UVLO
+    "정착 시간 측정",          # Settling Time
+    "소프트 스타트 파형 분석", # Soft-start
+    "스위칭 주파수 안정성",    # Switching Frequency
+    "온도 드리프트 분석",      # Temperature Drift
+    "과부하 복구 시간",        # Overload Recovery
+    "입출력 격리 검증",        # Isolation Test
 ]
 
-OPERATORS = ["Kim Minjun", "Lee Jiyeon", "Park Sungho", "Choi Yuna", "Jung Hyunwoo"]
+OPERATORS = ["김민준", "이지연", "박성호", "최유나", "정현우", "홍길동"]
 
 ALARM_TEMPLATES = [
-    ("critical", "connection",   "{asset} connection lost — no heartbeat for 5 minutes"),
-    ("warning",  "performance",  "{asset} CPU usage exceeded 85% threshold"),
-    ("warning",  "calibration",  "{asset} calibration due in 7 days"),
-    ("info",     "system",       "{asset} firmware update available (v{ver})"),
-    ("critical", "performance",  "{asset} temperature exceeded 75°C"),
-    ("warning",  "connection",   "{asset} packet loss detected on network interface"),
+    ("critical", "connection",   "{asset} 연결 끊김 — 5분간 응답 없음"),
+    ("warning",  "performance",  "{asset} CPU 사용률 85% 초과"),
+    ("warning",  "calibration",  "{asset} 교정 만료 7일 전 — 재교정 필요"),
+    ("info",     "system",       "{asset} 펌웨어 업데이트 가능 (v{ver})"),
+    ("critical", "performance",  "{asset} 온도 75°C 초과 — 즉시 점검 필요"),
+    ("warning",  "connection",   "{asset} 네트워크 패킷 손실 감지"),
+    ("critical", "performance",  "{asset} 출력 전압 드리프트 ±50mV 초과"),
+    ("warning",  "calibration",  "{asset} SMU 교정 정확도 저하 감지"),
 ]
 
 PACKAGES = [
-    ("NI-DAQmx",        "23.3.0"),
-    ("NI-VISA",         "23.3.0"),
-    ("LabVIEW Runtime", "2023 Q3"),
-    ("TestStand",       "2023.Q3"),
-    ("NI-488.2",        "23.0.0"),
+    ("NI-SMU Driver",          "23.5.0"),
+    ("NI-DMM Driver",          "23.5.0"),
+    ("NI-Scope Driver",        "23.3.0"),
+    ("PMIC TestStand Seq",     "3.2.1"),
+    ("PMIC Calibration Suite", "2.1.0"),
 ]
+
+
+def _pmic_measurements(test_name: str) -> dict:
+    """테스트 항목별 PMIC 도메인 측정값 생성."""
+    if "효율" in test_name:
+        vin = round(random.uniform(3.5, 4.2), 3)
+        vout = round(random.uniform(1.78, 1.82), 4)
+        iout = round(random.uniform(100, 500), 1)
+        iin = round(iout * vout / vin * random.uniform(1.05, 1.15), 1)
+        eff = round(iout * vout / (iin * vin) * 100, 2)
+        return {"vin_v": vin, "vout_v": vout, "iin_ma": iin, "iout_ma": iout, "efficiency_pct": eff}
+    elif "리플" in test_name:
+        return {"vout_v": round(random.uniform(1.79, 1.81), 4),
+                "ripple_mv": round(random.uniform(2.0, 15.0), 2),
+                "iout_ma": round(random.uniform(100, 300), 1)}
+    elif "PSRR" in test_name or "노이즈" in test_name:
+        return {"psrr_db": round(random.uniform(55, 75), 1),
+                "freq_khz": round(random.uniform(100, 1000), 1),
+                "vout_v": round(random.uniform(1.799, 1.801), 4)}
+    elif "정착" in test_name or "소프트" in test_name:
+        return {"settling_us": round(random.uniform(5, 50), 1),
+                "vout_v": round(random.uniform(1.78, 1.82), 4),
+                "overshoot_mv": round(random.uniform(0, 30), 1)}
+    elif "전압" in test_name or "레귤레이션" in test_name:
+        vin = round(random.uniform(3.6, 4.2), 3)
+        vout = round(random.uniform(1.78, 1.82), 4)
+        return {"vin_v": vin, "vout_v": vout,
+                "iout_ma": round(random.uniform(50, 500), 1),
+                "deviation_mv": round(abs(vout - 1.800) * 1000, 2)}
+    else:
+        return {"vin_v":  round(random.uniform(3.6, 4.2), 3),
+                "vout_v": round(random.uniform(1.78, 1.82), 4),
+                "iout_ma": round(random.uniform(100, 300), 1)}
 
 
 def seed(db: Session):
     if db.query(models.Asset).count() > 0:
-        return  # already seeded
+        return  # 이미 시드됨
 
     now = datetime.utcnow()
-    assets = []
 
-    for spec in NI_ASSETS:
+    # ── 사용자 & API 키 ───────────────────────────────────────────────────────
+    admin_key  = os.getenv("ADMIN_API_KEY",    "sl-admin-key-2024")
+    eng_key    = os.getenv("ENGINEER_API_KEY", "sl-engineer-key-2024")
+    agent_key  = os.getenv("AGENT_API_KEY",    "sl-agent-pxi-key-2024")
+
+    users_data = [
+        {"username": "admin",    "full_name": "시스템 관리자", "email": "admin@pmic.local",    "role": "admin",    "key": admin_key,  "label": "Admin Key"},
+        {"username": "engineer", "full_name": "검증 엔지니어", "email": "eng@pmic.local",      "role": "engineer", "key": eng_key,    "label": "Engineer Key"},
+        {"username": "agent",    "full_name": "PXI Agent",     "email": "agent@pmic.local",   "role": "engineer", "key": agent_key,  "label": "Agent Key"},
+    ]
+    for ud in users_data:
+        user = models.User(username=ud["username"], full_name=ud["full_name"],
+                           email=ud["email"], role=ud["role"])
+        db.add(user)
+        db.flush()
+        api_key = models.APIKey(key_hash=hashlib.sha256(ud["key"].encode()).hexdigest(),
+                                label=ud["label"], user_id=user.id)
+        db.add(api_key)
+
+    db.flush()
+
+    # ── 장비 ──────────────────────────────────────────────────────────────────
+    assets = []
+    for spec in PMIC_ASSETS:
         status = random.choice(STATUSES)
         last_seen = now - timedelta(seconds=random.randint(10, 3600)) if status != "offline" else None
         asset = models.Asset(
             **spec,
             status=status,
             last_seen=last_seen,
-            tags={"environment": random.choice(["production", "staging", "development"])},
+            tags={"env": random.choice(["production", "staging"]),
+                  "project": random.choice(["PMIC-A100", "PMIC-B200", "PMIC-C300"])},
         )
         db.add(asset)
         assets.append(asset)
 
-    db.flush()  # populate IDs
+    db.flush()
 
-    # ── Test results (last 30 days) ──────────────────────────────────────────
-    for _ in range(150):
+    # ── 테스트 결과 (30일) ────────────────────────────────────────────────────
+    for _ in range(200):
         asset = random.choice(assets)
         start = now - timedelta(days=random.randint(0, 30), hours=random.randint(0, 23))
-        dur = random.uniform(2.0, 120.0)
-        status = random.choices(["pass", "fail", "error"], weights=[75, 20, 5])[0]
+        dur = round(random.uniform(5.0, 180.0), 2)
+        status = random.choices(["pass", "fail", "error"], weights=[78, 18, 4])[0]
+        test_name = random.choice(TEST_NAMES)
         db.add(models.TestResult(
             asset_id=asset.id,
-            test_name=random.choice(TEST_NAMES),
+            test_name=test_name,
             status=status,
-            duration=round(dur, 2),
+            duration=dur,
             started_at=start,
             completed_at=start + timedelta(seconds=dur),
-            measurements={
-                "voltage_v": round(random.uniform(4.9, 5.1), 4),
-                "current_ma": round(random.uniform(99, 101), 3),
-                "frequency_hz": round(random.uniform(999, 1001), 2),
-            },
+            measurements=_pmic_measurements(test_name),
             operator=random.choice(OPERATORS),
         ))
 
-    # ── Alarms ────────────────────────────────────────────────────────────────
-    for i in range(20):
+    # ── 알람 ──────────────────────────────────────────────────────────────────
+    for _ in range(25):
         asset = random.choice(assets)
         sev, cat, tmpl = random.choice(ALARM_TEMPLATES)
         is_active = random.random() < 0.4
         triggered = now - timedelta(hours=random.randint(1, 72))
-        ack_at = None
-        ack_by = None
-        if not is_active:
-            ack_at = triggered + timedelta(minutes=random.randint(5, 120))
-            ack_by = random.choice(OPERATORS)
+        ack_at = (triggered + timedelta(minutes=random.randint(5, 120))) if not is_active else None
+        ack_by = random.choice(OPERATORS) if not is_active else None
         db.add(models.Alarm(
             asset_id=asset.id,
             severity=sev,
             category=cat,
-            message=tmpl.format(asset=asset.name, ver="2.4.0"),
+            message=tmpl.format(asset=asset.name, ver="2.5.0"),
             is_active=is_active,
             triggered_at=triggered,
             acknowledged_at=ack_at,
             acknowledged_by=ack_by,
         ))
 
-    # ── Deployments ───────────────────────────────────────────────────────────
+    # ── 배포 ──────────────────────────────────────────────────────────────────
     asset_ids = [a.id for a in assets]
     deploy_specs = [
-        ("NI-DAQmx 23.3 Rollout",   *PACKAGES[0], "completed", 5),
-        ("NI-VISA Update",          *PACKAGES[1], "completed", 3),
-        ("LabVIEW RT Upgrade",      *PACKAGES[2], "running",   0),
-        ("TestStand Deploy QA",     *PACKAGES[3], "pending",   0),
+        ("NI-SMU 드라이버 23.5 업데이트",       *PACKAGES[0], "succeeded", 5),
+        ("NI-DMM 드라이버 23.5 업데이트",        *PACKAGES[1], "succeeded", 3),
+        ("PMIC TestStand 시퀀스 3.2.1 배포",      *PACKAGES[3], "running",   0),
+        ("PMIC Calibration Suite 2.1.0 배포",    *PACKAGES[4], "pending",   0),
     ]
     for name, pkg, ver, status, days_ago in deploy_specs:
-        targets = random.sample(asset_ids, k=random.randint(3, 8))
-        s_count = len(targets) if status == "completed" else random.randint(0, len(targets))
-        f_count = len(targets) - s_count if status == "completed" else 0
+        targets_ids = random.sample(asset_ids, k=random.randint(3, 8))
+        s_count = len(targets_ids) if status == "succeeded" else random.randint(0, len(targets_ids))
+        f_count = len(targets_ids) - s_count if status == "succeeded" else 0
         started = now - timedelta(days=days_ago, hours=2) if status != "pending" else None
-        completed = started + timedelta(hours=1) if status == "completed" else None
-        db.add(models.Deployment(
+        completed = started + timedelta(hours=1) if status == "succeeded" else None
+        dep = models.Deployment(
             name=name,
             package_name=pkg,
             package_version=ver,
-            target_assets=targets,
             status=status,
             created_by=random.choice(OPERATORS),
             started_at=started,
             completed_at=completed,
             success_count=s_count,
             fail_count=f_count,
-        ))
+        )
+        db.add(dep)
+        db.flush()
+
+        for aid in targets_ids:
+            t_status = "succeeded" if status == "succeeded" else (
+                "running" if status == "running" else "pending"
+            )
+            db.add(models.DeploymentTarget(
+                deployment_id=dep.id,
+                asset_id=aid,
+                status=t_status,
+            ))
+
+    # ── 에이전트 노드 ─────────────────────────────────────────────────────────
+    agent_nodes = [
+        {"agent_id": "pxi-lab1-agent",  "hostname": "pxi-lab1-server",  "ip_address": "192.168.10.200",
+         "version": "1.0.0", "capabilities": ["SMU", "DMM", "Oscilloscope", "Timing"]},
+        {"agent_id": "pxi-lab2-agent",  "hostname": "pxi-lab2-server",  "ip_address": "192.168.10.201",
+         "version": "1.0.0", "capabilities": ["SMU", "DMM", "Electronic Load"]},
+        {"agent_id": "pxi-emc-agent",   "hostname": "pxi-emc-server",   "ip_address": "192.168.10.202",
+         "version": "1.0.0", "capabilities": ["Chassis", "Oscilloscope"]},
+    ]
+    pmic_packages = [
+        ("NI-SMU Driver",          "23.5.0", "/opt/ni/smu"),
+        ("NI-DMM Driver",          "23.5.0", "/opt/ni/dmm"),
+        ("NI-Scope Driver",        "23.3.0", "/opt/ni/scope"),
+        ("PMIC TestStand Seq",     "3.2.1",  "/opt/ni/teststand"),
+        ("LabVIEW Runtime",        "2023.Q3","/opt/ni/labview"),
+        ("PMIC Calibration Suite", "2.1.0",  "/opt/ni/cal"),
+    ]
+    for nd in agent_nodes:
+        node = models.AgentNode(
+            agent_id=nd["agent_id"],
+            hostname=nd["hostname"],
+            ip_address=nd["ip_address"],
+            version=nd["version"],
+            status="online",
+            last_heartbeat=now - timedelta(seconds=random.randint(5, 30)),
+            capabilities=nd["capabilities"],
+        )
+        db.add(node)
+        db.flush()
+        for pkg_name, pkg_ver, pkg_path in random.sample(pmic_packages, k=random.randint(3, 6)):
+            db.add(models.AgentInventory(
+                agent_id=node.id,
+                package_name=pkg_name,
+                version=pkg_ver,
+                install_path=pkg_path,
+            ))
 
     db.commit()
-    print("[seed] Dummy data inserted successfully.")
+    print("[seed] PMIC 더미 데이터 삽입 완료.")

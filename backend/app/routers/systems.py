@@ -18,7 +18,11 @@ def overview(db: Session = Depends(get_db)):
     critical_alarms = db.query(models.Alarm).filter(
         models.Alarm.is_active == True, models.Alarm.severity == "critical"
     ).count()
-    running_deps = db.query(models.Deployment).filter(models.Deployment.status == "running").count()
+
+    # queued + running 배포를 "진행 중"으로 표시
+    running_deps = db.query(models.Deployment).filter(
+        models.Deployment.status.in_(["queued", "running"])
+    ).count()
 
     since = datetime.utcnow() - timedelta(days=1)
     q_today = db.query(models.TestResult).filter(models.TestResult.started_at >= since)

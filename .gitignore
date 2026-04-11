@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Docker
+postgres_data/
+
+# OS
+.DS_Store
+Thumbs.db

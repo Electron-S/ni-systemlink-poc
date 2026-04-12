@@ -4,7 +4,7 @@ from collections import defaultdict
 import statistics as _stats_mod
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, text
+from sqlalchemy import func, text, Integer
 from .. import models, schemas
 from ..database import get_db
 from ..auth import require_engineer
@@ -242,6 +242,52 @@ def get_parametric(
         })
 
     return {"points": points, "stats": group_stats}
+
+
+# ── 시나리오 17: 장비 가동률 분석 ─────────────────────────────────────────────
+
+@router.get("/utilization")
+def get_utilization(
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+):
+    """자산별 테스트 건수·합격률·마지막 사용 시각 (가동률 분석용)."""
+    since = datetime.utcnow() - timedelta(days=days)
+
+    rows = (
+        db.query(
+            models.TestResult.asset_id,
+            func.count(models.TestResult.id).label("test_count"),
+            func.sum(
+                func.cast(models.TestResult.status == "pass", Integer())
+            ).label("pass_count"),
+            func.max(models.TestResult.started_at).label("last_tested_at"),
+        )
+        .filter(models.TestResult.started_at >= since)
+        .group_by(models.TestResult.asset_id)
+        .order_by(func.count(models.TestResult.id).desc())
+        .all()
+    )
+
+    asset_map = {
+        a.id: a for a in
+        db.query(models.Asset).filter(
+            models.Asset.id.in_([r.asset_id for r in rows])
+        ).all()
+    }
+
+    return [
+        {
+            "asset_id":      r.asset_id,
+            "asset_name":    asset_map[r.asset_id].name if r.asset_id in asset_map else "Unknown",
+            "asset_type":    asset_map[r.asset_id].asset_type if r.asset_id in asset_map else "",
+            "test_count":    r.test_count,
+            "pass_count":    r.pass_count or 0,
+            "pass_rate":     round((r.pass_count or 0) / r.test_count * 100, 1) if r.test_count else 0,
+            "last_tested_at": r.last_tested_at.isoformat() if r.last_tested_at else None,
+        }
+        for r in rows
+    ]
 
 
 # ── 시나리오 11: 교차 root cause 분석 ────────────────────────────────────────

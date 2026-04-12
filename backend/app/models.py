@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, JSON, Text
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, JSON, Text, Date
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
@@ -62,6 +62,10 @@ class Asset(Base):
     created_at = Column(DateTime, server_default=func.now())
     channel_count = Column(Integer, default=0)
     tags = Column(JSON, default={})
+
+    # ── 시나리오 01: 교정 관리 ────────────────────────────────────────────────
+    calibration_due_date      = Column(Date, nullable=True)   # 다음 교정 만료일
+    calibration_interval_days = Column(Integer, default=365)  # 교정 주기 (일)
 
     test_results = relationship("TestResult", back_populates="asset", cascade="all, delete-orphan")
     alarms = relationship("Alarm", back_populates="asset", cascade="all, delete-orphan")

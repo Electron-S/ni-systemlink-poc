@@ -1,6 +1,6 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 from typing import Optional, List, Any, Dict
-from datetime import datetime
+from datetime import datetime, date
 
 
 # ── User / APIKey / AuditLog ──────────────────────────────────────────────────
@@ -43,6 +43,8 @@ class AssetBase(BaseModel):
     driver_version: str
     channel_count: int = 0
     tags: Dict[str, Any] = {}
+    calibration_due_date:      Optional[date] = None
+    calibration_interval_days: int = 365
 
 
 class AssetCreate(AssetBase):
@@ -54,6 +56,19 @@ class AssetOut(AssetBase):
     status: str
     last_seen: Optional[datetime]
     created_at: datetime
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def calibration_status(self) -> str:
+        if self.calibration_due_date is None:
+            return "미등록"
+        today = date.today()
+        delta = (self.calibration_due_date - today).days
+        if delta < 0:
+            return "만료"
+        if delta <= 30:
+            return "만료임박"
+        return "유효"
 
     model_config = {"from_attributes": True}
 

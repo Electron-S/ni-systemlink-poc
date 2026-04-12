@@ -33,6 +33,19 @@ export interface Asset {
   created_at: string
   channel_count: number
   tags: Record<string, string>
+  calibration_due_date: string | null        // YYYY-MM-DD
+  calibration_interval_days: number
+  calibration_status: '유효' | '만료임박' | '만료' | '미등록'
+}
+
+export interface UtilizationEntry {
+  asset_id: number
+  asset_name: string
+  asset_type: string
+  test_count: number
+  pass_count: number
+  pass_rate: number
+  last_tested_at: string | null
 }
 
 export interface DeploymentTarget {

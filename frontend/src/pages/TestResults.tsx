@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react'
 import {
   Table, Tag, Card, Row, Col, Statistic, Select, Space,
   Typography, Segmented, Modal, Descriptions, Divider,
-  Input, DatePicker, Badge, Drawer, Timeline, Spin,
+  Input, DatePicker, Badge, Drawer, Timeline, Spin, Button,
 } from 'antd'
 import type { RangePickerProps } from 'antd/es/date-picker'
 import {
-  CheckCircleFilled, CloseCircleFilled, WarningFilled, HistoryOutlined,
+  CheckCircleFilled, CloseCircleFilled, WarningFilled, HistoryOutlined, PrinterOutlined,
 } from '@ant-design/icons'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -240,9 +240,39 @@ export default function TestResults() {
         />
       </Card>
 
-      <Modal title="테스트 결과 레포트" open={!!selected} onCancel={() => setSelected(null)}
-        footer={null} width={620}>
-        {selected && <TestReport result={selected} />}
+      <Modal
+        title="테스트 결과 레포트"
+        open={!!selected}
+        onCancel={() => setSelected(null)}
+        footer={
+          <Button
+            icon={<PrinterOutlined />}
+            onClick={() => {
+              if (!selected) return
+              const el = document.getElementById('test-report-print')
+              if (!el) return
+              const win = window.open('', '_blank')!
+              win.document.write(`<html><head><title>${selected.test_name} 리포트</title>
+                <style>
+                  body{font-family:sans-serif;margin:24px;font-size:13px}
+                  table{border-collapse:collapse;width:100%}
+                  td,th{border:1px solid #ddd;padding:6px 10px}
+                  .pass{color:#52c41a;font-weight:bold}
+                  .fail{color:#ff4d4f;font-weight:bold}
+                  .error{color:#faad14;font-weight:bold}
+                  @media print{button{display:none}}
+                </style></head><body>`)
+              win.document.write(el.innerHTML)
+              win.document.write('</body></html>')
+              win.document.close()
+              setTimeout(() => win.print(), 400)
+            }}
+          >
+            PDF 출력
+          </Button>
+        }
+        width={620}>
+        {selected && <div id="test-report-print"><TestReport result={selected} /></div>}
       </Modal>
 
       {/* DUT 이력 드로어 — 시나리오 10: DUT 기준 테스트 추적성 */}

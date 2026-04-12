@@ -3,7 +3,7 @@ import {
   Table, Tag, Card, Row, Col, Statistic, Drawer, Descriptions,
   Space, Button, Progress, Typography, Badge, Input,
 } from 'antd'
-import { ReloadOutlined, InfoCircleOutlined, SearchOutlined, RobotOutlined } from '@ant-design/icons'
+import { ReloadOutlined, InfoCircleOutlined, SearchOutlined, RobotOutlined, ToolOutlined } from '@ant-design/icons'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
@@ -105,6 +105,14 @@ export default function Assets() {
       render: (v: string) => <Tag color="blue">{v}</Tag>,
     },
     {
+      title: '교정', dataIndex: 'calibration_status', width: 90,
+      render: (_: string, r: Asset) => {
+        const s = r.calibration_status
+        const color = s === '유효' ? 'success' : s === '만료임박' ? 'warning' : s === '만료' ? 'error' : 'default'
+        return <Badge status={color as any} text={s} />
+      },
+    },
+    {
       title: '마지막 접속', dataIndex: 'last_seen', width: 130,
       render: (v: string | null) => v ? dayjs(v).fromNow() : <Text type="secondary">—</Text>,
     },
@@ -185,6 +193,31 @@ export default function Assets() {
                 <Badge status={STATUS_COLOR[selected.status] as any} text={STATUS_LABEL[selected.status]} />
               </Descriptions.Item>
             </Descriptions>
+
+            {/* 교정 정보 — 시나리오 01 */}
+            <Card title="교정 정보" size="small" extra={<ToolOutlined />}>
+              {(() => {
+                const s = selected.calibration_status
+                const color = s === '유효' ? '#52c41a' : s === '만료임박' ? '#faad14' : s === '만료' ? '#ff4d4f' : '#8c8c8c'
+                return (
+                  <Descriptions column={1} size="small" bordered>
+                    <Descriptions.Item label="교정 상태">
+                      <Text style={{ color, fontWeight: 700 }}>{s}</Text>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="만료일">
+                      {selected.calibration_due_date
+                        ? <Text style={{ color: s === '만료' || s === '만료임박' ? color : undefined }}>
+                            {selected.calibration_due_date}
+                          </Text>
+                        : <Text type="secondary">미등록</Text>}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="교정 주기">
+                      {selected.calibration_interval_days}일
+                    </Descriptions.Item>
+                  </Descriptions>
+                )
+              })()}
+            </Card>
 
             {/* 관리 에이전트 */}
             <Card title="관리 에이전트" size="small" extra={<RobotOutlined />}>

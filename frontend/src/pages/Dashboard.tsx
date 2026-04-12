@@ -8,7 +8,7 @@ import {
   PieChart, Pie, Cell, Tooltip, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
 } from 'recharts'
-import api, { SystemOverview, Alarm, TestStats, WSEvent } from '../api/client'
+import api, { SystemOverview, Alarm, TestStats, WSEvent, UtilizationEntry } from '../api/client'
 import { useRealtimeMetrics } from '../hooks/useWebSocket'
 import dayjs from 'dayjs'
 
@@ -61,16 +61,18 @@ function eventText(e: WSEvent): string {
 // ── 메인 컴포넌트 ─────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
-  const [overview, setOverview] = useState<SystemOverview | null>(null)
-  const [alarms, setAlarms]     = useState<Alarm[]>([])
-  const [stats, setStats]       = useState<TestStats | null>(null)
-  const { events }              = useRealtimeMetrics()
+  const [overview, setOverview]       = useState<SystemOverview | null>(null)
+  const [alarms, setAlarms]           = useState<Alarm[]>([])
+  const [stats, setStats]             = useState<TestStats | null>(null)
+  const [utilization, setUtilization] = useState<UtilizationEntry[]>([])
+  const { events }                    = useRealtimeMetrics()
 
   useEffect(() => {
     const fetch = () => {
       api.get<SystemOverview>('/systems/overview').then(r => setOverview(r.data))
       api.get<Alarm[]>('/alarms', { params: { active_only: true } }).then(r => setAlarms(r.data.slice(0, 5)))
       api.get<TestStats>('/test-results/stats', { params: { days: 7 } }).then(r => setStats(r.data))
+      api.get<UtilizationEntry[]>('/test-results/utilization', { params: { days: 30 } }).then(r => setUtilization(r.data))
     }
     fetch()
     const interval = setInterval(fetch, 30_000)
@@ -236,6 +238,43 @@ export default function Dashboard() {
                 }))}
               />
             )}
+          </Card>
+        </Col>
+      </Row>
+
+      {/* 장비 가동률 — 시나리오 17 */}
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col xs={24}>
+          <Card title="장비 가동률 (최근 30일 테스트 건수)" extra={
+            <Text type="secondary" style={{ fontSize: 12 }}>병목 장비 파악용</Text>
+          }>
+            <ResponsiveContainer width="100%" height={Math.max(utilization.length * 36, 120)}>
+              <BarChart
+                data={[...utilization].reverse()}
+                layout="vertical"
+                margin={{ top: 0, right: 60, bottom: 0, left: 160 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 11 }} />
+                <YAxis
+                  type="category" dataKey="asset_name"
+                  tick={{ fontSize: 11 }} width={155}
+                />
+                <Tooltip
+                  formatter={(v, _n, p) => [`${v}건 (합격률 ${p.payload.pass_rate}%)`, '테스트']}
+                />
+                <Bar dataKey="test_count" radius={[0, 4, 4, 0]}>
+                  {[...utilization].reverse().map((e, i) => (
+                    <Cell key={i} fill={e.pass_rate >= 90 ? '#52c41a' : e.pass_rate >= 70 ? '#faad14' : '#ff4d4f'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+            <div style={{ marginTop: 8, display: 'flex', gap: 16 }}>
+              <Space size={4}><div style={{ width: 12, height: 12, background: '#52c41a', borderRadius: 2 }} /><Text style={{ fontSize: 11 }}>합격률 90%+</Text></Space>
+              <Space size={4}><div style={{ width: 12, height: 12, background: '#faad14', borderRadius: 2 }} /><Text style={{ fontSize: 11 }}>70–89%</Text></Space>
+              <Space size={4}><div style={{ width: 12, height: 12, background: '#ff4d4f', borderRadius: 2 }} /><Text style={{ fontSize: 11 }}>70% 미만</Text></Space>
+            </div>
           </Card>
         </Col>
       </Row>

@@ -2,7 +2,7 @@
 import hashlib
 import os
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date as _date
 from sqlalchemy.orm import Session
 from . import models
 
@@ -198,14 +198,34 @@ def seed(db: Session):
     db.flush()
 
     # ── 장비 ──────────────────────────────────────────────────────────────────
+    today = now.date()
+    # 교정 만료일: 만료/임박/유효/미등록 혼합 (12대 기준)
+    CAL_DUE_DATES = [
+        today - timedelta(days=20),   # 만료 (SMU Lab1-01)
+        today - timedelta(days=3),    # 만료 (Chassis Lab2)
+        today + timedelta(days=12),   # 만료임박 (SMU Lab1-02)
+        today + timedelta(days=25),   # 만료임박 (SMU Lab2)
+        today + timedelta(days=45),   # 유효 (DMM Lab1)
+        today + timedelta(days=60),   # 유효 (DMM Lab2)
+        today + timedelta(days=90),   # 유효 (Scope Lab1)
+        today + timedelta(days=120),  # 유효 (Scope Rel)
+        today + timedelta(days=180),  # 유효 (E-Load)
+        today + timedelta(days=200),  # 유효 (Timing)
+        None,                          # 미등록 (Chassis Lab1)
+        None,                          # 미등록 (Chassis EMC)
+    ]
+
     assets = []
-    for spec in PMIC_ASSETS:
+    for i, spec in enumerate(PMIC_ASSETS):
         status = random.choice(STATUSES)
         last_seen = now - timedelta(seconds=random.randint(10, 3600)) if status != "offline" else None
+        cal_due = CAL_DUE_DATES[i] if i < len(CAL_DUE_DATES) else None
         asset = models.Asset(
             **spec,
             status=status,
             last_seen=last_seen,
+            calibration_due_date=cal_due,
+            calibration_interval_days=365,
             tags={"env": random.choice(["production", "staging"]),
                   "project": random.choice(["PMIC-A100", "PMIC-B200", "PMIC-C300"])},
         )

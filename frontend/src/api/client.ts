@@ -158,6 +158,47 @@ export interface AuditLog {
   timestamp: string
 }
 
+// ── 파라메트릭 분석 ──────────────────────────────────────────────────────────
+
+export interface ParametricPoint {
+  value: number
+  group: string
+  dut_id: string | null
+  status: string
+  started_at: string
+  test_name: string
+}
+
+export interface ParametricGroupStat {
+  group: string
+  count: number
+  mean: number
+  min: number
+  max: number
+  std: number
+  pass_rate: number
+}
+
+export interface ParametricData {
+  points: ParametricPoint[]
+  stats: ParametricGroupStat[]
+}
+
+export interface CrossCell {
+  total: number
+  pass_rate: number | null
+}
+
+export interface CrossAnalysis {
+  rows: string[]
+  cols: string[]
+  matrix: Record<string, Record<string, CrossCell>>
+  row_label: string
+  col_label: string
+}
+
+// ── WebSocket ────────────────────────────────────────────────────────────────
+
 export interface WSEvent {
   id: string   // 프론트에서 생성 (타임스탬프 기반)
   event_type:

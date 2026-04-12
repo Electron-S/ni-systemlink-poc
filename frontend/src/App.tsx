@@ -4,15 +4,16 @@ import { Layout, Menu, Typography, Badge, theme, notification } from 'antd'
 import {
   DashboardOutlined, DeploymentUnitOutlined,
   CloudUploadOutlined, ExperimentOutlined, BellOutlined,
-  RobotOutlined, AuditOutlined,
+  RobotOutlined, AuditOutlined, DotChartOutlined,
 } from '@ant-design/icons'
-import Dashboard    from './pages/Dashboard'
-import Assets       from './pages/Assets'
-import Deployments  from './pages/Deployments'
-import TestResults  from './pages/TestResults'
-import Alarms       from './pages/Alarms'
-import Agents       from './pages/Agents'
-import AuditLogs    from './pages/AuditLogs'
+import Dashboard           from './pages/Dashboard'
+import Assets              from './pages/Assets'
+import Deployments         from './pages/Deployments'
+import TestResults         from './pages/TestResults'
+import Alarms              from './pages/Alarms'
+import Agents              from './pages/Agents'
+import AuditLogs           from './pages/AuditLogs'
+import ParametricAnalysis  from './pages/ParametricAnalysis'
 import { WSContext, useWebSocketProvider, useRealtimeMetrics } from './hooks/useWebSocket'
 
 const { Sider, Header, Content } = Layout
@@ -23,6 +24,7 @@ const NAV = [
   { key: '/assets',       label: '자산 관리',       icon: <DeploymentUnitOutlined /> },
   { key: '/deployments',  label: '소프트웨어 배포', icon: <CloudUploadOutlined /> },
   { key: '/test-results', label: '테스트 결과',     icon: <ExperimentOutlined /> },
+  { key: '/parametric',  label: '파라메트릭 분석',  icon: <DotChartOutlined /> },
   { key: '/alarms',       label: '알람',            icon: <BellOutlined /> },
   { key: '/agents',       label: 'PXI 에이전트',   icon: <RobotOutlined /> },
   { key: '/audit-logs',   label: '감사 로그',       icon: <AuditOutlined /> },
@@ -138,6 +140,7 @@ function AppLayout() {
             <Route path="/assets"        element={<Assets />} />
             <Route path="/deployments"   element={<Deployments />} />
             <Route path="/test-results"  element={<TestResults />} />
+            <Route path="/parametric"    element={<ParametricAnalysis />} />
             <Route path="/alarms"        element={<Alarms />} />
             <Route path="/agents"        element={<Agents />} />
             <Route path="/audit-logs"    element={<AuditLogs />} />

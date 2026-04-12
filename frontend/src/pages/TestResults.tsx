@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react'
 import {
   Table, Tag, Card, Row, Col, Statistic, Select, Space,
   Typography, Segmented, Modal, Descriptions, Divider,
-  Input, DatePicker, Badge,
+  Input, DatePicker, Badge, Drawer, Timeline, Spin,
 } from 'antd'
 import type { RangePickerProps } from 'antd/es/date-picker'
 import {
-  CheckCircleFilled, CloseCircleFilled, WarningFilled,
+  CheckCircleFilled, CloseCircleFilled, WarningFilled, HistoryOutlined,
 } from '@ant-design/icons'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -50,6 +50,19 @@ export default function TestResults() {
   const [loading, setLoading]     = useState(true)
   const [days, setDays]           = useState(7)
   const [selected, setSelected]   = useState<TestResult | null>(null)
+
+  // DUT 이력 드로어 (시나리오 10)
+  const [dutId, setDutId]           = useState<string | null>(null)
+  const [dutHistory, setDutHistory] = useState<TestResult[]>([])
+  const [dutLoading, setDutLoading] = useState(false)
+
+  const openDutHistory = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setDutId(id)
+    setDutLoading(true)
+    api.get<TestResult[]>('/test-results', { params: { dut_id: id, limit: 100, days: 90 } })
+      .then(r => { setDutHistory(r.data); setDutLoading(false) })
+  }
 
   // 필터 상태
   const [statusFilter,     setStatusFilter]     = useState<string | null>(null)
@@ -98,7 +111,10 @@ export default function TestResults() {
     { title: '테스트명', dataIndex: 'test_name' },
     {
       title: 'DUT', dataIndex: 'dut_id',
-      render: (v: string | null) => v ? <Tag style={{ fontSize: 11 }}>{v}</Tag> : <Text type="secondary">—</Text>,
+      render: (v: string | null) => v
+        ? <Tag style={{ fontSize: 11, cursor: 'pointer' }} icon={<HistoryOutlined />}
+            onClick={e => openDutHistory(v, e)}>{v}</Tag>
+        : <Text type="secondary">—</Text>,
     },
     {
       title: '코너', dataIndex: 'corner',
@@ -228,6 +244,63 @@ export default function TestResults() {
         footer={null} width={620}>
         {selected && <TestReport result={selected} />}
       </Modal>
+
+      {/* DUT 이력 드로어 — 시나리오 10: DUT 기준 테스트 추적성 */}
+      <Drawer
+        title={
+          <Space>
+            <HistoryOutlined />
+            <span>DUT 이력</span>
+            {dutId && <Tag>{dutId}</Tag>}
+            {!dutLoading && <Badge count={dutHistory.length} overflowCount={999} style={{ background: '#1890ff' }} />}
+          </Space>
+        }
+        open={!!dutId}
+        onClose={() => { setDutId(null); setDutHistory([]) }}
+        width={560}
+      >
+        <Spin spinning={dutLoading}>
+          {dutHistory.length > 0 ? (
+            <Timeline
+              items={dutHistory.map(r => ({
+                color: r.status === 'pass' ? 'green' : r.status === 'fail' ? 'red' : 'orange',
+                dot: r.status === 'pass'
+                  ? <CheckCircleFilled style={{ color: '#52c41a' }} />
+                  : r.status === 'fail'
+                  ? <CloseCircleFilled style={{ color: '#ff4d4f' }} />
+                  : <WarningFilled style={{ color: '#faad14' }} />,
+                children: (
+                  <div style={{ paddingBottom: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <Text strong style={{ fontSize: 13 }}>{r.test_name}</Text>
+                      <Tag color={STATUS_COLOR[r.status]}>{STATUS_LABEL[r.status]}</Tag>
+                    </div>
+                    <div style={{ color: '#8c8c8c', fontSize: 11, marginTop: 2 }}>
+                      {dayjs(r.started_at).format('YYYY-MM-DD HH:mm')} · {r.duration.toFixed(1)}초 · {r.asset_name ?? '—'}
+                    </div>
+                    <Space size={4} style={{ marginTop: 4 }} wrap>
+                      {r.corner    && <Tag color={CORNER_COLORS[r.corner]}    style={{ fontSize: 10 }}>{r.corner}</Tag>}
+                      {r.silicon_rev && <Tag style={{ fontSize: 10 }}>{r.silicon_rev}</Tag>}
+                      {r.lot_id    && <Tag color="cyan"    style={{ fontSize: 10 }}>{r.lot_id}</Tag>}
+                      {r.recipe_version && <Tag color="blue" style={{ fontSize: 10 }}>{r.recipe_version}</Tag>}
+                    </Space>
+                    {Object.entries(r.measurements).length > 0 && (
+                      <div style={{ marginTop: 4, fontSize: 11, color: '#595959' }}>
+                        {Object.entries(r.measurements).slice(0, 3).map(([k, v]) =>
+                          `${prettyKey(k)}: ${v}${unitFromKey(k)}`
+                        ).join(' · ')}
+                        {Object.entries(r.measurements).length > 3 && ' · …'}
+                      </div>
+                    )}
+                  </div>
+                ),
+              }))}
+            />
+          ) : (
+            !dutLoading && <Text type="secondary">이력 없음</Text>
+          )}
+        </Spin>
+      </Drawer>
     </div>
   )
 }

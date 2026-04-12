@@ -1,8 +1,10 @@
 from typing import List, Optional
 from datetime import datetime, timedelta
+from collections import defaultdict
+import statistics as _stats_mod
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, text
 from .. import models, schemas
 from ..database import get_db
 from ..auth import require_engineer
@@ -158,3 +160,143 @@ def get_stats(
         "trend":          trend,
         "corner_stats":   corner_stats,
     }
+
+
+# ── 시나리오 14: 파라메트릭 분석 ─────────────────────────────────────────────
+
+@router.get("/measurement-keys")
+def get_measurement_keys(db: Session = Depends(get_db)):
+    """테스트 결과에 존재하는 측정 항목 키 목록 반환 (PostgreSQL jsonb 전용)."""
+    rows = db.execute(
+        text("SELECT DISTINCT jsonb_object_keys(measurements) FROM test_results "
+             "WHERE measurements IS NOT NULL AND measurements != '{}' ORDER BY 1")
+    ).fetchall()
+    return {"keys": [r[0] for r in rows]}
+
+
+@router.get("/parametric")
+def get_parametric(
+    measurement_key: str           = Query(...),
+    group_by:        str           = Query("corner"),
+    asset_id:        Optional[int] = Query(None),
+    test_name:       Optional[str] = Query(None),
+    days:            int           = Query(30, ge=1, le=90),
+    date_from:       Optional[str] = Query(None),
+    date_to:         Optional[str] = Query(None),
+    limit:           int           = Query(1000, le=2000),
+    db: Session = Depends(get_db),
+):
+    """측정 항목 1개를 선택해 그룹별 산포 데이터 + 통계 반환."""
+    VALID_GROUP_BY = {"corner", "silicon_rev", "lot_id", "recipe_version", "asset_id"}
+    if group_by not in VALID_GROUP_BY:
+        group_by = "corner"
+
+    since = datetime.fromisoformat(date_from) if date_from else datetime.utcnow() - timedelta(days=days)
+    until = datetime.fromisoformat(date_to)   if date_to   else datetime.utcnow()
+
+    q = db.query(models.TestResult).filter(
+        models.TestResult.started_at >= since,
+        models.TestResult.started_at <= until,
+    )
+    if asset_id: q = q.filter(models.TestResult.asset_id == asset_id)
+    if test_name: q = q.filter(models.TestResult.test_name == test_name)
+
+    rows = q.order_by(models.TestResult.started_at.asc()).limit(limit).all()
+
+    points = []
+    for r in rows:
+        val = r.measurements.get(measurement_key) if r.measurements else None
+        if val is None:
+            continue
+        group_val = getattr(r, group_by, None)
+        if group_val is None:
+            continue
+        points.append({
+            "value":      float(val),
+            "group":      str(group_val),
+            "dut_id":     r.dut_id,
+            "status":     r.status,
+            "started_at": r.started_at.isoformat(),
+            "test_name":  r.test_name,
+        })
+
+    # 그룹별 통계
+    grp: dict = defaultdict(list)
+    grp_pass: dict = defaultdict(int)
+    for p in points:
+        grp[p["group"]].append(p["value"])
+        if p["status"] == "pass":
+            grp_pass[p["group"]] += 1
+
+    group_stats = []
+    for g, vals in sorted(grp.items()):
+        n = len(vals)
+        group_stats.append({
+            "group":     g,
+            "count":     n,
+            "mean":      round(sum(vals) / n, 4),
+            "min":       round(min(vals), 4),
+            "max":       round(max(vals), 4),
+            "std":       round(_stats_mod.stdev(vals), 4) if n > 1 else 0.0,
+            "pass_rate": round(grp_pass[g] / n * 100, 1),
+        })
+
+    return {"points": points, "stats": group_stats}
+
+
+# ── 시나리오 11: 교차 root cause 분석 ────────────────────────────────────────
+
+@router.get("/cross-analysis")
+def get_cross_analysis(
+    row_by:    str           = Query("corner"),
+    col_by:    str           = Query("silicon_rev"),
+    asset_id:  Optional[int] = Query(None),
+    days:      int           = Query(30, ge=1, le=90),
+    date_from: Optional[str] = Query(None),
+    date_to:   Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """두 PMIC 속성 기준으로 합격률 교차 테이블 반환 (root cause 분석용)."""
+    VALID_FIELDS = {"corner", "silicon_rev", "lot_id", "recipe_version", "operator"}
+    row_by = row_by if row_by in VALID_FIELDS else "corner"
+    col_by = col_by if col_by in VALID_FIELDS else "silicon_rev"
+
+    since = datetime.fromisoformat(date_from) if date_from else datetime.utcnow() - timedelta(days=days)
+    until = datetime.fromisoformat(date_to)   if date_to   else datetime.utcnow()
+
+    q = db.query(models.TestResult).filter(
+        models.TestResult.started_at >= since,
+        models.TestResult.started_at <= until,
+    )
+    if asset_id:
+        q = q.filter(models.TestResult.asset_id == asset_id)
+
+    cell: dict = defaultdict(lambda: {"total": 0, "pass": 0})
+    row_vals: set = set()
+    col_vals: set = set()
+
+    for r in q.all():
+        rv = getattr(r, row_by, None)
+        cv = getattr(r, col_by, None)
+        if rv is None or cv is None:
+            continue
+        key = (str(rv), str(cv))
+        row_vals.add(str(rv))
+        col_vals.add(str(cv))
+        cell[key]["total"] += 1
+        if r.status == "pass":
+            cell[key]["pass"] += 1
+
+    rows_sorted = sorted(row_vals)
+    cols_sorted = sorted(col_vals)
+    matrix = {}
+    for rv in rows_sorted:
+        matrix[rv] = {}
+        for cv in cols_sorted:
+            c = cell[(rv, cv)]
+            matrix[rv][cv] = {
+                "total":     c["total"],
+                "pass_rate": round(c["pass"] / c["total"] * 100, 1) if c["total"] else None,
+            }
+
+    return {"rows": rows_sorted, "cols": cols_sorted, "matrix": matrix, "row_label": row_by, "col_label": col_by}

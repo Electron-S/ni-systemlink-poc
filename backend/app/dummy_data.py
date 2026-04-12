@@ -113,6 +113,29 @@ PACKAGES = [
     ("PMIC Calibration Suite", "2.1.0"),
 ]
 
+# ── PMIC 추적성 메타데이터 풀 ─────────────────────────────────────────────────
+DUT_IDS       = [f"DUT-{l}{str(n).zfill(3)}" for l in "AB" for n in range(1, 31)]
+BOARD_REVS    = ["REV-A", "REV-B", "REV-C", "REV-D"]
+SILICON_REVS  = ["ES1.0", "ES1.1", "ES2.0", "MP1.0"]
+LOTS          = ["LOT-2024Q3-001", "LOT-2024Q4-015", "LOT-2025Q1-008", "LOT-2025Q2-022"]
+CORNERS       = ["TT", "FF", "SS", "FS", "SF"]
+RECIPE_VERS   = ["v1.0.2", "v1.1.0", "v1.2.3", "v2.0.0"]
+
+# 에이전트 → 관리 자산 매핑 (장비 이름 기준)
+AGENT_ASSET_MAP = {
+    "pxi-lab1-agent": [
+        "PXIe-1084-LAB1-01", "PXIe-4162-LAB1-01", "PXIe-4162-LAB1-02",
+        "PXIe-4081-LAB1-01", "PXIe-5124-LAB1-01", "PXIe-6674T-LAB1-01",
+    ],
+    "pxi-lab2-agent": [
+        "PXIe-1084-LAB2-01", "PXIe-4163-LAB2-01",
+        "PXIe-4081-LAB2-01", "PXIe-4051-LAB2-01",
+    ],
+    "pxi-emc-agent": [
+        "PXIe-1082-EMC-01", "PXIe-5124-REL-01",
+    ],
+}
+
 
 def _pmic_measurements(test_name: str) -> dict:
     """테스트 항목별 PMIC 도메인 측정값 생성."""
@@ -192,7 +215,7 @@ def seed(db: Session):
     db.flush()
 
     # ── 테스트 결과 (30일) ────────────────────────────────────────────────────
-    for _ in range(200):
+    for _ in range(250):
         asset = random.choice(assets)
         start = now - timedelta(days=random.randint(0, 30), hours=random.randint(0, 23))
         dur = round(random.uniform(5.0, 180.0), 2)
@@ -207,6 +230,12 @@ def seed(db: Session):
             completed_at=start + timedelta(seconds=dur),
             measurements=_pmic_measurements(test_name),
             operator=random.choice(OPERATORS),
+            dut_id=random.choice(DUT_IDS),
+            board_rev=random.choice(BOARD_REVS),
+            silicon_rev=random.choice(SILICON_REVS),
+            lot_id=random.choice(LOTS),
+            corner=random.choice(CORNERS),
+            recipe_version=random.choice(RECIPE_VERS),
         ))
 
     # ── 알람 ──────────────────────────────────────────────────────────────────
@@ -283,7 +312,15 @@ def seed(db: Session):
         ("LabVIEW Runtime",        "2023.Q3","/opt/ni/labview"),
         ("PMIC Calibration Suite", "2.1.0",  "/opt/ni/cal"),
     ]
+    # 자산 이름 → ID 맵
+    asset_name_map = {a.name: a.id for a in assets}
+
     for nd in agent_nodes:
+        managed_ids = [
+            asset_name_map[n]
+            for n in AGENT_ASSET_MAP.get(nd["agent_id"], [])
+            if n in asset_name_map
+        ]
         node = models.AgentNode(
             agent_id=nd["agent_id"],
             hostname=nd["hostname"],
@@ -292,6 +329,7 @@ def seed(db: Session):
             status="online",
             last_heartbeat=now - timedelta(seconds=random.randint(5, 30)),
             capabilities=nd["capabilities"],
+            managed_asset_ids=managed_ids,
         )
         db.add(node)
         db.flush()

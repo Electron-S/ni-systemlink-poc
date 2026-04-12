@@ -3,6 +3,7 @@ import json
 import os
 import random
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from typing import List
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -77,6 +78,35 @@ def _smooth_metrics(asset_id: int) -> dict:
     return m
 
 
+async def agent_watchdog():
+    """60초마다 실행: 90초 이상 heartbeat 없는 에이전트를 offline 처리."""
+    from . import models as _m
+    THRESHOLD = timedelta(seconds=90)
+    while True:
+        await asyncio.sleep(60)
+        db: Session = SessionLocal()
+        try:
+            cutoff = datetime.utcnow() - THRESHOLD
+            stale = (
+                db.query(_m.AgentNode)
+                .filter(
+                    _m.AgentNode.status == "online",
+                    _m.AgentNode.last_heartbeat < cutoff,
+                )
+                .all()
+            )
+            for node in stale:
+                node.status = "offline"
+                print(f"[watchdog] {node.agent_id} → offline (stale heartbeat)")
+            if stale:
+                db.commit()
+        except Exception as exc:
+            db.rollback()
+            print(f"[watchdog] 오류: {exc}")
+        finally:
+            db.close()
+
+
 async def realtime_emitter():
     """2초마다 모든 장비 메트릭 전송."""
     db: Session = SessionLocal()
@@ -110,10 +140,12 @@ async def lifespan(app: FastAPI):
     t1 = asyncio.create_task(realtime_emitter())
     t2 = asyncio.create_task(sim.run())
     t3 = asyncio.create_task(worker.run())
+    t4 = asyncio.create_task(agent_watchdog())
     yield
     t1.cancel()
     t2.cancel()
     t3.cancel()
+    t4.cancel()
 
 
 # ── FastAPI 앱 ────────────────────────────────────────────────────────────────

@@ -111,6 +111,13 @@ class TestResultCreate(BaseModel):
     measurements: Dict[str, Any] = {}
     operator: str
     notes: Optional[str] = None
+    # PMIC 추적성 필드
+    dut_id:         Optional[str] = None
+    board_rev:      Optional[str] = None
+    silicon_rev:    Optional[str] = None
+    lot_id:         Optional[str] = None
+    corner:         Optional[str] = None
+    recipe_version: Optional[str] = None
 
 
 class TestResultOut(TestResultCreate):
@@ -190,6 +197,7 @@ class AgentOut(BaseModel):
     last_heartbeat: Optional[datetime]
     ip_address: Optional[str]
     capabilities: List[str]
+    managed_asset_ids: List[int]
     inventory: List[AgentInventoryOut]
 
     model_config = {"from_attributes": True}

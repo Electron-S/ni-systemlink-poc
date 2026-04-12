@@ -3,8 +3,8 @@ import {
   Table, Card, Tag, Badge, Drawer, Space, Typography,
   Button, Descriptions, Row, Col, Statistic,
 } from 'antd'
-import { ReloadOutlined, RobotOutlined } from '@ant-design/icons'
-import api, { AgentNode } from '../api/client'
+import { ReloadOutlined, RobotOutlined, DatabaseOutlined } from '@ant-design/icons'
+import api, { AgentNode, Asset } from '../api/client'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 
@@ -12,20 +12,34 @@ dayjs.extend(relativeTime)
 
 const { Text } = Typography
 
+const STATUS_COLOR: Record<string, string> = {
+  online: 'success', offline: 'default', warning: 'warning', error: 'error',
+}
+const STATUS_LABEL: Record<string, string> = {
+  online: '온라인', offline: '오프라인', warning: '경고', error: '오류',
+}
+
 export default function Agents() {
   const [agents, setAgents]   = useState<AgentNode[]>([])
+  const [assets, setAssets]   = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<AgentNode | null>(null)
 
   const load = () => {
     setLoading(true)
-    api.get<AgentNode[]>('/agents').then(r => {
-      setAgents(r.data)
+    Promise.all([
+      api.get<AgentNode[]>('/agents'),
+      api.get<Asset[]>('/assets'),
+    ]).then(([ar, asr]) => {
+      setAgents(ar.data)
+      setAssets(asr.data)
       setLoading(false)
     })
   }
 
   useEffect(load, [])
+
+  const assetMap = Object.fromEntries(assets.map(a => [a.id, a]))
 
   const onlineCnt  = agents.filter(a => a.status === 'online').length
   const offlineCnt = agents.filter(a => a.status === 'offline').length
@@ -57,6 +71,12 @@ export default function Agents() {
         <Space size={4} wrap>
           {v.map(c => <Tag key={c} style={{ fontSize: 11 }}>{c}</Tag>)}
         </Space>
+      ),
+    },
+    {
+      title: '관리 자산', dataIndex: 'managed_asset_ids',
+      render: (ids: number[]) => (
+        <Tag icon={<DatabaseOutlined />} color="geekblue">{(ids ?? []).length}개 자산</Tag>
       ),
     },
     {
@@ -135,6 +155,40 @@ export default function Agents() {
                 </Space>
               </Descriptions.Item>
             </Descriptions>
+
+            {/* 관리 자산 */}
+            <Card title="관리 자산" size="small" extra={
+              <Tag color="geekblue">{(selected.managed_asset_ids ?? []).length}개</Tag>
+            }>
+              {(selected.managed_asset_ids ?? []).length === 0 ? (
+                <Text type="secondary">연결된 자산 없음</Text>
+              ) : (
+                <Space direction="vertical" style={{ width: '100%' }} size={4}>
+                  {(selected.managed_asset_ids ?? []).map(id => {
+                    const a = assetMap[id]
+                    if (!a) return <Tag key={id}>ID:{id}</Tag>
+                    return (
+                      <div key={id} style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '4px 8px', background: '#fafafa', borderRadius: 4,
+                        border: '1px solid #f0f0f0',
+                      }}>
+                        <Space size={6}>
+                          <DatabaseOutlined style={{ color: '#1890ff' }} />
+                          <Text code style={{ fontSize: 11 }}>{a.name}</Text>
+                        </Space>
+                        <Space size={4}>
+                          <Tag style={{ fontSize: 10, margin: 0 }}>{a.asset_type}</Tag>
+                          <Badge status={STATUS_COLOR[a.status] as any} text={
+                            <Text style={{ fontSize: 11 }}>{STATUS_LABEL[a.status]}</Text>
+                          } />
+                        </Space>
+                      </div>
+                    )
+                  })}
+                </Space>
+              )}
+            </Card>
 
             <Card title="설치된 패키지" size="small">
               <Table

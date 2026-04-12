@@ -8,7 +8,13 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from . import models
 
-OPERATORS = ["김민준", "이지연", "박성호", "최유나", "정현우", "홍길동"]
+OPERATORS      = ["김민준", "이지연", "박성호", "최유나", "정현우", "홍길동"]
+DUT_IDS        = [f"DUT-{l}{str(n).zfill(3)}" for l in "AB" for n in range(1, 31)]
+BOARD_REVS     = ["REV-A", "REV-B", "REV-C", "REV-D"]
+SILICON_REVS   = ["ES1.0", "ES1.1", "ES2.0", "MP1.0"]
+LOTS           = ["LOT-2024Q3-001", "LOT-2024Q4-015", "LOT-2025Q1-008", "LOT-2025Q2-022"]
+CORNERS        = ["TT", "FF", "SS", "FS", "SF"]
+RECIPE_VERS    = ["v1.0.2", "v1.1.0", "v1.2.3", "v2.0.0"]
 
 TEST_NAMES = [
     "출력 전압 정확도 검사",
@@ -173,6 +179,12 @@ class SimulationEngine:
             completed_at=now,
             measurements=_pmic_measurements(test_name),
             operator=random.choice(OPERATORS),
+            dut_id=random.choice(DUT_IDS),
+            board_rev=random.choice(BOARD_REVS),
+            silicon_rev=random.choice(SILICON_REVS),
+            lot_id=random.choice(LOTS),
+            corner=random.choice(CORNERS),
+            recipe_version=random.choice(RECIPE_VERS),
         )
         db.add(result)
         db.flush()

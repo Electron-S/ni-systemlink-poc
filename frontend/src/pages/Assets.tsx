@@ -3,11 +3,11 @@ import {
   Table, Tag, Card, Row, Col, Statistic, Drawer, Descriptions,
   Space, Button, Progress, Typography, Badge, Input,
 } from 'antd'
-import { ReloadOutlined, InfoCircleOutlined, SearchOutlined } from '@ant-design/icons'
+import { ReloadOutlined, InfoCircleOutlined, SearchOutlined, RobotOutlined } from '@ant-design/icons'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
-import api, { Asset, AssetMetrics } from '../api/client'
+import api, { Asset, AssetMetrics, AgentNode } from '../api/client'
 import { useRealtimeMetrics } from '../hooks/useWebSocket'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
@@ -27,6 +27,7 @@ const METRIC_HISTORY_LEN = 20
 
 export default function Assets() {
   const [assets, setAssets]   = useState<Asset[]>([])
+  const [agents, setAgents]   = useState<AgentNode[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch]   = useState('')
   const [selected, setSelected] = useState<Asset | null>(null)
@@ -35,8 +36,20 @@ export default function Assets() {
 
   const load = () => {
     setLoading(true)
-    api.get<Asset[]>('/assets').then(r => { setAssets(r.data); setLoading(false) })
+    Promise.all([
+      api.get<Asset[]>('/assets'),
+      api.get<AgentNode[]>('/agents'),
+    ]).then(([ar, agr]) => {
+      setAssets(ar.data)
+      setAgents(agr.data)
+      setLoading(false)
+    })
   }
+
+  // selected 자산을 관리하는 에이전트 찾기
+  const managingAgent = selected
+    ? agents.find(ag => (ag.managed_asset_ids ?? []).includes(selected.id)) ?? null
+    : null
 
   useEffect(load, [])
 
@@ -172,6 +185,34 @@ export default function Assets() {
                 <Badge status={STATUS_COLOR[selected.status] as any} text={STATUS_LABEL[selected.status]} />
               </Descriptions.Item>
             </Descriptions>
+
+            {/* 관리 에이전트 */}
+            <Card title="관리 에이전트" size="small" extra={<RobotOutlined />}>
+              {managingAgent ? (
+                <Descriptions column={1} size="small" bordered>
+                  <Descriptions.Item label="에이전트 ID">
+                    <Text code style={{ fontSize: 11 }}>{managingAgent.agent_id}</Text>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="호스트명">{managingAgent.hostname}</Descriptions.Item>
+                  <Descriptions.Item label="상태">
+                    <Badge
+                      status={managingAgent.status === 'online' ? 'success' : 'default'}
+                      text={managingAgent.status === 'online' ? '온라인' : '오프라인'}
+                    />
+                  </Descriptions.Item>
+                  <Descriptions.Item label="마지막 heartbeat">
+                    {managingAgent.last_heartbeat ? dayjs(managingAgent.last_heartbeat).fromNow() : '—'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="역량">
+                    <Space size={4} wrap>
+                      {managingAgent.capabilities.map(c => <Tag key={c} style={{ fontSize: 10 }}>{c}</Tag>)}
+                    </Space>
+                  </Descriptions.Item>
+                </Descriptions>
+              ) : (
+                <Text type="secondary">이 자산을 관리하는 에이전트가 없습니다</Text>
+              )}
+            </Card>
 
             <Card title="실시간 메트릭" size="small" extra={<Badge status="processing" text="실시간" />}>
               {liveMetrics[selected.id] ? (

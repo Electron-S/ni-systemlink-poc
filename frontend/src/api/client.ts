@@ -73,6 +73,13 @@ export interface TestResult {
   measurements: Record<string, number>
   operator: string
   notes: string | null
+  // PMIC 추적성
+  dut_id:         string | null
+  board_rev:      string | null
+  silicon_rev:    string | null
+  lot_id:         string | null
+  corner:         string | null
+  recipe_version: string | null
 }
 
 export interface Alarm {
@@ -137,6 +144,7 @@ export interface AgentNode {
   last_heartbeat: string | null
   ip_address: string | null
   capabilities: string[]
+  managed_asset_ids: number[]
   inventory: AgentInventory[]
 }
 

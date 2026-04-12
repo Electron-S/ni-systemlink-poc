@@ -116,6 +116,14 @@ class TestResult(Base):
     operator = Column(String)
     notes = Column(Text, nullable=True)
 
+    # ── PMIC 추적성 필드 ───────────────────────────────────────────────────────
+    dut_id         = Column(String, nullable=True, index=True)  # 피시험체 ID
+    board_rev      = Column(String, nullable=True)              # 보드 리비전 (REV-C)
+    silicon_rev    = Column(String, nullable=True)              # 실리콘 리비전 (ES1.1 / MP)
+    lot_id         = Column(String, nullable=True, index=True)  # 웨이퍼 Lot ID
+    corner         = Column(String, nullable=True)              # 공정 코너 (TT/FF/SS/FS/SF)
+    recipe_version = Column(String, nullable=True)              # 테스트 레시피 버전
+
     asset = relationship("Asset", back_populates="test_results")
 
 
@@ -146,6 +154,7 @@ class AgentNode(Base):
     last_heartbeat = Column(DateTime, nullable=True)
     ip_address = Column(String(64), nullable=True)
     capabilities = Column(JSON, default=[])
+    managed_asset_ids = Column(JSON, default=[])     # 이 에이전트가 관리하는 Asset ID 목록
 
     inventory = relationship("AgentInventory", back_populates="agent", cascade="all, delete-orphan")
 

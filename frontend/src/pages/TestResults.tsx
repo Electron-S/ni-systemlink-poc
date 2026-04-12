@@ -80,7 +80,7 @@ export default function TestResults() {
 
     Promise.all([
       api.get<TestResult[]>('/test-results', { params }),
-      api.get<TestStats>('/test-results/stats', { params: { days } }),
+      api.get<TestStats>('/test-results/stats', { params }),
     ]).then(([rr, sr]) => {
       setResults(rr.data)
       setStats(sr.data)

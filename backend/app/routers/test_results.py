@@ -74,25 +74,56 @@ def create_result(
 
 
 @router.get("/stats")
-def get_stats(days: int = Query(7, ge=1, le=90), db: Session = Depends(get_db)):
-    since = datetime.utcnow() - timedelta(days=days)
-    q = db.query(models.TestResult).filter(models.TestResult.started_at >= since)
+def get_stats(
+    asset_id:    Optional[int] = Query(None),
+    status:      Optional[str] = Query(None),
+    dut_id:      Optional[str] = Query(None),
+    silicon_rev: Optional[str] = Query(None),
+    corner:      Optional[str] = Query(None),
+    lot_id:      Optional[str] = Query(None),
+    days:        int = Query(7, ge=1, le=90),
+    date_from:   Optional[str] = Query(None),
+    date_to:     Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    since = datetime.fromisoformat(date_from) if date_from else datetime.utcnow() - timedelta(days=days)
+    until = datetime.fromisoformat(date_to)   if date_to   else datetime.utcnow()
+
+    def _base(db_session):
+        """현재 필터 조건이 적용된 기본 쿼리."""
+        q = db_session.query(models.TestResult).filter(
+            models.TestResult.started_at >= since,
+            models.TestResult.started_at <= until,
+        )
+        if asset_id:    q = q.filter(models.TestResult.asset_id   == asset_id)
+        if status:      q = q.filter(models.TestResult.status      == status)
+        if dut_id:      q = q.filter(models.TestResult.dut_id      == dut_id)
+        if silicon_rev: q = q.filter(models.TestResult.silicon_rev == silicon_rev)
+        if corner:      q = q.filter(models.TestResult.corner      == corner)
+        if lot_id:      q = q.filter(models.TestResult.lot_id      == lot_id)
+        return q
+
+    q      = _base(db)
     total  = q.count()
     passed = q.filter(models.TestResult.status == "pass").count()
     failed = q.filter(models.TestResult.status == "fail").count()
     errors = q.filter(models.TestResult.status == "error").count()
     avg_dur = db.query(func.avg(models.TestResult.duration)).filter(
-        models.TestResult.started_at >= since
+        models.TestResult.started_at >= since,
+        models.TestResult.started_at <= until,
     ).scalar() or 0
 
-    # 일별 합격률 추이
+    # 일별 합격률 추이 — date_from/to가 있으면 그 범위 내, 없으면 days 기준
+    from datetime import date as _date
+    day_count  = max((until.date() - since.date()).days + 1, 1)
+    trend_days = min(day_count, days if not date_from else day_count)
     trend = []
-    for d in range(days - 1, -1, -1):
-        day_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=d)
+    for d in range(trend_days - 1, -1, -1):
+        day_start = (until - timedelta(days=d)).replace(hour=0, minute=0, second=0, microsecond=0)
         day_end   = day_start + timedelta(days=1)
-        day_q     = db.query(models.TestResult).filter(
+        day_q = _base(db).filter(
             models.TestResult.started_at >= day_start,
-            models.TestResult.started_at < day_end,
+            models.TestResult.started_at <  day_end,
         )
         day_total = day_q.count()
         day_pass  = day_q.filter(models.TestResult.status == "pass").count()
@@ -103,15 +134,16 @@ def get_stats(days: int = Query(7, ge=1, le=90), db: Session = Depends(get_db)):
             "pass_rate": round(day_pass / day_total * 100, 1) if day_total else 0,
         })
 
-    # 공정 코너별 합격률
+    # 공정 코너별 합격률 (corner 필터가 있으면 해당 코너만, 없으면 전체)
+    corners_to_show = [corner] if corner else ["TT", "FF", "SS", "FS", "SF"]
     corner_stats = []
-    for corner in ["TT", "FF", "SS", "FS", "SF"]:
-        cq = q.filter(models.TestResult.corner == corner)
+    for c in corners_to_show:
+        cq = _base(db).filter(models.TestResult.corner == c)
         ct = cq.count()
         cp = cq.filter(models.TestResult.status == "pass").count()
         if ct > 0:
             corner_stats.append({
-                "corner": corner,
+                "corner": c,
                 "total":  ct,
                 "pass_rate": round(cp / ct * 100, 1),
             })

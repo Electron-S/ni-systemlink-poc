@@ -22,6 +22,10 @@ AGENTS = [
         "ip_address":  "192.168.10.200",
         "version":     "1.0.0",
         "capabilities": ["SMU", "DMM", "Oscilloscope", "Timing"],
+        "managed_asset_names": [
+            "PXIe-1084-LAB1-01", "PXIe-4162-LAB1-01", "PXIe-4162-LAB1-02",
+            "PXIe-4081-LAB1-01", "PXIe-5124-LAB1-01", "PXIe-6674T-LAB1-01",
+        ],
     },
     {
         "agent_id":    "pxi-lab2-agent",
@@ -29,6 +33,10 @@ AGENTS = [
         "ip_address":  "192.168.10.201",
         "version":     "1.0.0",
         "capabilities": ["SMU", "DMM", "Electronic Load"],
+        "managed_asset_names": [
+            "PXIe-1084-LAB2-01", "PXIe-4163-LAB2-01",
+            "PXIe-4081-LAB2-01", "PXIe-4051-LAB2-01",
+        ],
     },
     {
         "agent_id":   "pxi-emc-agent",
@@ -36,6 +44,9 @@ AGENTS = [
         "ip_address": "192.168.10.202",
         "version":    "1.0.0",
         "capabilities": ["Chassis", "Oscilloscope"],
+        "managed_asset_names": [
+            "PXIe-1082-EMC-01", "PXIe-5124-REL-01",
+        ],
     },
 ]
 
@@ -87,10 +98,11 @@ async def _heartbeat_loop(agent_id: str, cfg: dict):
                 await client.post(
                     f"/api/agents/{agent_id}/heartbeat",
                     json={
-                        "hostname":     cfg["hostname"],
-                        "version":      cfg["version"],
-                        "ip_address":   cfg["ip_address"],
-                        "capabilities": cfg["capabilities"],
+                        "hostname":              cfg["hostname"],
+                        "version":               cfg["version"],
+                        "ip_address":            cfg["ip_address"],
+                        "capabilities":          cfg["capabilities"],
+                        "managed_asset_names":   cfg.get("managed_asset_names", []),
                     },
                 )
                 print(f"[{agent_id}] heartbeat 전송 완료")

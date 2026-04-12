@@ -41,6 +41,14 @@ def heartbeat(
     node.capabilities   = payload.capabilities
     node.status         = "online"
     node.last_heartbeat = datetime.utcnow()
+
+    # 에이전트가 관리 자산 이름을 보고한 경우 → ID로 해석해 저장
+    if payload.managed_asset_names is not None:
+        assets = db.query(models.Asset).filter(
+            models.Asset.name.in_(payload.managed_asset_names)
+        ).all()
+        node.managed_asset_ids = [a.id for a in assets]
+
     db.commit()
     db.refresh(node)
     return node

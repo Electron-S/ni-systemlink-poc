@@ -19,6 +19,27 @@ def _get_managing_agent(db: Session, asset_id: int) -> models.AgentNode | None:
     return None
 
 
+def _update_inventory(db: Session, agent: models.AgentNode, package_name: str, new_version: str) -> None:
+    """배포 성공 후 에이전트 인벤토리 버전 갱신 (없으면 신규 생성)."""
+    inv = (
+        db.query(models.AgentInventory)
+        .filter(
+            models.AgentInventory.agent_id   == agent.id,
+            models.AgentInventory.package_name == package_name,
+        )
+        .first()
+    )
+    if inv:
+        inv.version     = new_version
+        inv.recorded_at = datetime.utcnow()
+    else:
+        db.add(models.AgentInventory(
+            agent_id=agent.id,
+            package_name=package_name,
+            version=new_version,
+        ))
+
+
 def _get_installed_version(db: Session, agent: models.AgentNode, package_name: str) -> str | None:
     inv = (
         db.query(models.AgentInventory)
@@ -108,6 +129,9 @@ class DeploymentWorker:
                         from_ver = f"{current_ver} → " if current_ver else "(미설치) → "
                         target.log = f"[OK] {dep.package_name} {from_ver}{dep.package_version} 설치 완료"
                         dep.success_count += 1
+                        # 배포 성공 후 에이전트 인벤토리 버전 즉시 갱신
+                        if agent:
+                            _update_inventory(db, agent, dep.package_name, dep.package_version)
                     else:
                         target.log = (
                             f"[FAIL] {dep.package_name} {dep.package_version} 설치 실패 — "

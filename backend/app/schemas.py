@@ -166,6 +166,7 @@ class HeartbeatPayload(BaseModel):
     version: str
     ip_address: Optional[str] = None
     capabilities: List[str] = []
+    managed_asset_names: Optional[List[str]] = None  # 에이전트가 관리하는 자산 이름 목록
 
 
 class InventoryItem(BaseModel):

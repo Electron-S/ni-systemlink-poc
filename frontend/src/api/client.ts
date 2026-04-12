@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { message } from 'antd'
 
 // 쓰기 작업용 API 키 (실제 환경에서는 로그인 플로우로 획득)
 const ADMIN_API_KEY = 'sl-admin-key-2024'
@@ -12,6 +13,18 @@ api.interceptors.request.use(cfg => {
   }
   return cfg
 })
+
+// 전역 에러 핸들러 — API 오류 시 Ant Design 알림 표시
+api.interceptors.response.use(
+  res => res,
+  err => {
+    const status  = err.response?.status
+    const detail  = err.response?.data?.detail ?? err.message ?? '알 수 없는 오류'
+    const summary = status ? `${status}: ${detail}` : detail
+    message.error(`API 오류 — ${summary}`, 4)
+    return Promise.reject(err)
+  }
+)
 
 export default api
 
@@ -74,6 +87,36 @@ export interface Deployment {
   notes: string | null
 }
 
+export interface TestStep {
+  seq:         number
+  name:        string
+  status:      'pass' | 'fail' | 'error' | 'skip'
+  duration_ms: number
+  error_msg:   string | null
+}
+
+export interface MeasurementDetail {
+  name:      string
+  condition: string
+  value:     number
+  unit:      string
+  spec_min:  number | null
+  spec_max:  number | null
+  status:    'pass' | 'fail' | 'unknown'
+}
+
+export interface WaveformData {
+  name:     string
+  x_label:  string
+  y_label:  string
+  x:        number[]
+  y:        number[]
+  spec_min: number | null
+  spec_max: number | null
+  is_fail:  boolean
+  meta:     string
+}
+
 export interface TestResult {
   id: number
   asset_id: number
@@ -93,6 +136,21 @@ export interface TestResult {
   lot_id:         string | null
   corner:         string | null
   recipe_version: string | null
+  // 스텝 계층
+  steps: TestStep[] | null
+  // 상세 측정 + 파형
+  measurement_details: MeasurementDetail[] | null
+  waveform_data:       WaveformData | null
+}
+
+export interface CalibrationEvent {
+  id:            number
+  asset_id:      number
+  performed_at:  string
+  performed_by:  string
+  result:        'pass' | 'fail'
+  notes:         string | null
+  next_due_date: string | null
 }
 
 export interface Alarm {
@@ -129,6 +187,7 @@ export interface TestStats {
   pass_rate: number
   avg_duration_s: number
   trend: { date: string; total: number; pass: number; pass_rate: number }[]
+  corner_stats: { corner: string; total: number; pass_rate: number }[]
 }
 
 export interface AssetMetrics {

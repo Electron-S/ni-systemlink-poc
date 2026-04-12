@@ -137,37 +137,10 @@ AGENT_ASSET_MAP = {
 }
 
 
-def _pmic_measurements(test_name: str) -> dict:
-    """테스트 항목별 PMIC 도메인 측정값 생성."""
-    if "효율" in test_name:
-        vin = round(random.uniform(3.5, 4.2), 3)
-        vout = round(random.uniform(1.78, 1.82), 4)
-        iout = round(random.uniform(100, 500), 1)
-        iin = round(iout * vout / vin * random.uniform(1.05, 1.15), 1)
-        eff = round(iout * vout / (iin * vin) * 100, 2)
-        return {"vin_v": vin, "vout_v": vout, "iin_ma": iin, "iout_ma": iout, "efficiency_pct": eff}
-    elif "리플" in test_name:
-        return {"vout_v": round(random.uniform(1.79, 1.81), 4),
-                "ripple_mv": round(random.uniform(2.0, 15.0), 2),
-                "iout_ma": round(random.uniform(100, 300), 1)}
-    elif "PSRR" in test_name or "노이즈" in test_name:
-        return {"psrr_db": round(random.uniform(55, 75), 1),
-                "freq_khz": round(random.uniform(100, 1000), 1),
-                "vout_v": round(random.uniform(1.799, 1.801), 4)}
-    elif "정착" in test_name or "소프트" in test_name:
-        return {"settling_us": round(random.uniform(5, 50), 1),
-                "vout_v": round(random.uniform(1.78, 1.82), 4),
-                "overshoot_mv": round(random.uniform(0, 30), 1)}
-    elif "전압" in test_name or "레귤레이션" in test_name:
-        vin = round(random.uniform(3.6, 4.2), 3)
-        vout = round(random.uniform(1.78, 1.82), 4)
-        return {"vin_v": vin, "vout_v": vout,
-                "iout_ma": round(random.uniform(50, 500), 1),
-                "deviation_mv": round(abs(vout - 1.800) * 1000, 2)}
-    else:
-        return {"vin_v":  round(random.uniform(3.6, 4.2), 3),
-                "vout_v": round(random.uniform(1.78, 1.82), 4),
-                "iout_ma": round(random.uniform(100, 300), 1)}
+from .test_generators import (
+    _pmic_measurements, _generate_steps,
+    _generate_measurement_details, _generate_waveform,
+)
 
 
 def seed(db: Session):
@@ -234,13 +207,14 @@ def seed(db: Session):
 
     db.flush()
 
-    # ── 테스트 결과 (30일) ────────────────────────────────────────────────────
-    for _ in range(250):
+    # ── 테스트 결과 (90일) ────────────────────────────────────────────────────
+    for _ in range(3000):
         asset = random.choice(assets)
-        start = now - timedelta(days=random.randint(0, 30), hours=random.randint(0, 23))
+        start = now - timedelta(days=random.randint(0, 90), hours=random.randint(0, 23))
         dur = round(random.uniform(5.0, 180.0), 2)
         status = random.choices(["pass", "fail", "error"], weights=[78, 18, 4])[0]
         test_name = random.choice(TEST_NAMES)
+        meas = _pmic_measurements(test_name)
         db.add(models.TestResult(
             asset_id=asset.id,
             test_name=test_name,
@@ -248,7 +222,7 @@ def seed(db: Session):
             duration=dur,
             started_at=start,
             completed_at=start + timedelta(seconds=dur),
-            measurements=_pmic_measurements(test_name),
+            measurements=meas,
             operator=random.choice(OPERATORS),
             dut_id=random.choice(DUT_IDS),
             board_rev=random.choice(BOARD_REVS),
@@ -256,6 +230,9 @@ def seed(db: Session):
             lot_id=random.choice(LOTS),
             corner=random.choice(CORNERS),
             recipe_version=random.choice(RECIPE_VERS),
+            steps=_generate_steps(test_name, status, dur),
+            measurement_details=_generate_measurement_details(test_name, status, meas),
+            waveform_data=_generate_waveform(test_name, status, meas),
         ))
 
     # ── 알람 ──────────────────────────────────────────────────────────────────
@@ -359,6 +336,26 @@ def seed(db: Session):
                 package_name=pkg_name,
                 version=pkg_ver,
                 install_path=pkg_path,
+            ))
+
+    # ── 교정 이력 ─────────────────────────────────────────────────────────────
+    # calibration_due_date가 등록된 장비(인덱스 0~9)에만 과거 교정 이력 생성
+    for i, asset in enumerate(assets[:10]):
+        # 1~3회 과거 교정 이력
+        event_count = random.randint(1, 3)
+        for e_idx in range(event_count):
+            years_ago = event_count - e_idx        # 오래된 것부터 최근 순
+            performed = now - timedelta(days=365 * years_ago + random.randint(-30, 30))
+            result = random.choices(["pass", "fail"], weights=[88, 12])[0]
+            next_due = (_date.fromisoformat(str(performed.date())) + timedelta(days=365)
+                        if result == "pass" else None)
+            db.add(models.CalibrationEvent(
+                asset_id=asset.id,
+                performed_at=performed,
+                performed_by=random.choice(OPERATORS),
+                result=result,
+                notes="정기 교정 완료" if result == "pass" else "교정 기준 미달 — 재교정 필요",
+                next_due_date=next_due,
             ))
 
     db.commit()

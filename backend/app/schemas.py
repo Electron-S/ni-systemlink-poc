@@ -133,11 +133,33 @@ class TestResultCreate(BaseModel):
     lot_id:         Optional[str] = None
     corner:         Optional[str] = None
     recipe_version: Optional[str] = None
+    # 스텝 계층 (step-level traceability)
+    steps: Optional[List[Dict[str, Any]]] = None
+    # 조건별 측정 상세 + 파형
+    measurement_details: Optional[List[Dict[str, Any]]] = None
+    waveform_data:       Optional[Dict[str, Any]]       = None
 
 
 class TestResultOut(TestResultCreate):
     id: int
     asset_name: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+# ── CalibrationEvent ──────────────────────────────────────────────────────────
+
+class CalibrationEventCreate(BaseModel):
+    performed_at:  datetime
+    performed_by:  str
+    result:        str            # pass / fail
+    notes:         Optional[str] = None
+    next_due_date: Optional[date] = None
+
+
+class CalibrationEventOut(CalibrationEventCreate):
+    id:       int
+    asset_id: int
 
     model_config = {"from_attributes": True}
 

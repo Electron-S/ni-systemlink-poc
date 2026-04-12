@@ -24,6 +24,7 @@ export function useWebSocketProvider(): WSContextType {
 
   useEffect(() => {
     cancelled.current = false
+    let retryDelay = 3000  // 지수 백오프 시작값 (ms)
 
     const connect = () => {
       if (cancelled.current) return
@@ -33,7 +34,10 @@ export function useWebSocketProvider(): WSContextType {
       ws.current = socket
 
       socket.onopen = () => {
-        if (!cancelled.current) setConnected(true)
+        if (!cancelled.current) {
+          setConnected(true)
+          retryDelay = 3000  // 연결 성공 시 딜레이 초기화
+        }
       }
 
       socket.onmessage = (e) => {
@@ -57,7 +61,8 @@ export function useWebSocketProvider(): WSContextType {
       socket.onclose = () => {
         if (cancelled.current) return  // 언마운트 시 재연결 안 함
         setConnected(false)
-        setTimeout(connect, 3000)
+        setTimeout(connect, retryDelay)
+        retryDelay = Math.min(retryDelay * 2, 30_000)  // 최대 30초까지 지수 증가
       }
     }
 

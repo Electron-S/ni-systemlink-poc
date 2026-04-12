@@ -69,10 +69,10 @@ export default function Dashboard() {
 
   useEffect(() => {
     const fetch = () => {
-      api.get<SystemOverview>('/systems/overview').then(r => setOverview(r.data))
-      api.get<Alarm[]>('/alarms', { params: { active_only: true } }).then(r => setAlarms(r.data.slice(0, 5)))
-      api.get<TestStats>('/test-results/stats', { params: { days: 7 } }).then(r => setStats(r.data))
-      api.get<UtilizationEntry[]>('/test-results/utilization', { params: { days: 30 } }).then(r => setUtilization(r.data))
+      api.get<SystemOverview>('/systems/overview').then(r => setOverview(r.data)).catch(() => {})
+      api.get<Alarm[]>('/alarms', { params: { active_only: true } }).then(r => setAlarms(r.data.slice(0, 5))).catch(() => {})
+      api.get<TestStats>('/test-results/stats', { params: { days: 7 } }).then(r => setStats(r.data)).catch(() => {})
+      api.get<UtilizationEntry[]>('/test-results/utilization', { params: { days: 30 } }).then(r => setUtilization(r.data)).catch(() => {})
     }
     fetch()
     const interval = setInterval(fetch, 30_000)
@@ -84,10 +84,10 @@ export default function Dashboard() {
     if (events.length === 0) return
     const e = events[0]
     if (['alarm_triggered', 'asset_status', 'test_completed', 'deployment_done'].includes(e.event_type)) {
-      api.get<SystemOverview>('/systems/overview').then(r => setOverview(r.data))
+      api.get<SystemOverview>('/systems/overview').then(r => setOverview(r.data)).catch(() => {})
     }
     if (e.event_type === 'alarm_triggered') {
-      api.get<Alarm[]>('/alarms', { params: { active_only: true } }).then(r => setAlarms(r.data.slice(0, 5)))
+      api.get<Alarm[]>('/alarms', { params: { active_only: true } }).then(r => setAlarms(r.data.slice(0, 5))).catch(() => {})
     }
   }, [events.length > 0 ? events[0].id : null])
 
@@ -294,7 +294,7 @@ function AssetHealthGrid() {
   const { events } = useRealtimeMetrics()
 
   useEffect(() => {
-    api.get('/assets').then(r => setAssets(r.data))
+    api.get('/assets').then(r => setAssets(r.data)).catch(() => {})
   }, [])
 
   // 장비 상태 변경 이벤트 반영

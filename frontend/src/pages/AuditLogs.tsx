@@ -22,10 +22,10 @@ export default function AuditLogs() {
     setLoading(true)
     const params: Record<string, unknown> = { limit: 200 }
     if (resFilter) params.resource_type = resFilter
-    api.get<AuditLog[]>('/audit-logs', { params }).then(r => {
-      setLogs(r.data)
-      setLoading(false)
-    })
+    api.get<AuditLog[]>('/audit-logs', { params })
+      .then(r => setLogs(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }
 
   useEffect(load, [resFilter])

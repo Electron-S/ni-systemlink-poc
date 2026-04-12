@@ -89,11 +89,11 @@ export default function ParametricAnalysis() {
   const [crossLoading, setCrossLoading] = useState(false)
 
   useEffect(() => {
-    api.get<Asset[]>('/assets').then(r => setAssets(r.data))
+    api.get<Asset[]>('/assets').then(r => setAssets(r.data)).catch(() => {})
     api.get<{ keys: string[] }>('/test-results/measurement-keys').then(r => {
       setMeasureKeys(r.data.keys)
       if (r.data.keys.length > 0) setMeasureKey(r.data.keys[0])
-    })
+    }).catch(() => {})
   }, [])
 
   // 산포 데이터 로드
@@ -109,10 +109,10 @@ export default function ParametricAnalysis() {
     }
     if (assetFilter) params.asset_id = assetFilter
 
-    api.get<ParametricData>('/test-results/parametric', { params }).then(r => {
-      setData(r.data)
-      setLoading(false)
-    })
+    api.get<ParametricData>('/test-results/parametric', { params })
+      .then(r => setData(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }, [measureKey, groupBy, assetFilter, days, dateRange])
 
   // 교차 분석 데이터 로드
@@ -127,10 +127,10 @@ export default function ParametricAnalysis() {
     }
     if (assetFilter) params.asset_id = assetFilter
 
-    api.get<CrossAnalysis>('/test-results/cross-analysis', { params }).then(r => {
-      setCrossData(r.data)
-      setCrossLoading(false)
-    })
+    api.get<CrossAnalysis>('/test-results/cross-analysis', { params })
+      .then(r => setCrossData(r.data))
+      .catch(() => {})
+      .finally(() => setCrossLoading(false))
   }, [crossRowBy, crossColBy, assetFilter, days, dateRange])
 
   // 산포 차트용 데이터: 그룹별로 분리

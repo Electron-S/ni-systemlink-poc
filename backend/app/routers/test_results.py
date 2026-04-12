@@ -168,8 +168,8 @@ def get_stats(
 def get_measurement_keys(db: Session = Depends(get_db)):
     """테스트 결과에 존재하는 측정 항목 키 목록 반환 (PostgreSQL jsonb 전용)."""
     rows = db.execute(
-        text("SELECT DISTINCT jsonb_object_keys(measurements) FROM test_results "
-             "WHERE measurements IS NOT NULL AND measurements != '{}' ORDER BY 1")
+        text("SELECT DISTINCT jsonb_object_keys(measurements::jsonb) FROM test_results "
+             "WHERE measurements IS NOT NULL ORDER BY 1")
     ).fetchall()
     return {"keys": [r[0] for r in rows]}
 
@@ -187,7 +187,7 @@ def get_parametric(
     db: Session = Depends(get_db),
 ):
     """측정 항목 1개를 선택해 그룹별 산포 데이터 + 통계 반환."""
-    VALID_GROUP_BY = {"corner", "silicon_rev", "lot_id", "recipe_version", "asset_id"}
+    VALID_GROUP_BY = {"corner", "silicon_rev", "lot_id", "recipe_version", "asset_id", "operator"}
     if group_by not in VALID_GROUP_BY:
         group_by = "corner"
 

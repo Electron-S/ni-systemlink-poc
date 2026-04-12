@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react'
 import {
   Table, Tag, Card, Row, Col, Statistic, Drawer, Descriptions,
-  Space, Button, Progress, Typography, Badge, Input,
+  Space, Button, Progress, Typography, Badge, Input, Timeline, Spin,
+  Modal, Form, Select, DatePicker, message,
 } from 'antd'
-import { ReloadOutlined, InfoCircleOutlined, SearchOutlined, RobotOutlined, ToolOutlined } from '@ant-design/icons'
+import { ReloadOutlined, InfoCircleOutlined, SearchOutlined, RobotOutlined, ToolOutlined,
+  CheckCircleFilled, CloseCircleFilled, PlusOutlined } from '@ant-design/icons'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
-import api, { Asset, AssetMetrics, AgentNode } from '../api/client'
+import api, { Asset, AssetMetrics, AgentNode, CalibrationEvent } from '../api/client'
 import { useRealtimeMetrics } from '../hooks/useWebSocket'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
@@ -32,6 +34,11 @@ export default function Assets() {
   const [search, setSearch]   = useState('')
   const [selected, setSelected] = useState<Asset | null>(null)
   const [history, setHistory]   = useState<AssetMetrics[]>([])
+  const [calHistory, setCalHistory]   = useState<CalibrationEvent[]>([])
+  const [calLoading, setCalLoading]   = useState(false)
+  const [calModalOpen, setCalModalOpen] = useState(false)
+  const [calSubmitting, setCalSubmitting] = useState(false)
+  const [calForm] = Form.useForm()
   const { metrics: liveMetrics, events } = useRealtimeMetrics()
 
   const load = () => {
@@ -42,8 +49,7 @@ export default function Assets() {
     ]).then(([ar, agr]) => {
       setAssets(ar.data)
       setAgents(agr.data)
-      setLoading(false)
-    })
+    }).catch(() => {}).finally(() => setLoading(false))
   }
 
   // selected 자산을 관리하는 에이전트 찾기
@@ -70,6 +76,44 @@ export default function Assets() {
     if (!m) return
     setHistory(prev => [...prev.slice(-(METRIC_HISTORY_LEN - 1)), m])
   }, [liveMetrics, selected?.id])
+
+  // 자산 선택 시 교정 이력 로드
+  useEffect(() => {
+    if (!selected) return
+    setCalLoading(true)
+    api.get<CalibrationEvent[]>(`/assets/${selected.id}/calibration-history`)
+      .then(r => setCalHistory(r.data))
+      .catch(() => {})
+      .finally(() => setCalLoading(false))
+  }, [selected?.id])
+
+  const handleCalSubmit = async () => {
+    if (!selected) return
+    try {
+      const values = await calForm.validateFields()
+      setCalSubmitting(true)
+      await api.post(`/assets/${selected.id}/calibration-events`, {
+        performed_at:  values.performed_at.toISOString(),
+        performed_by:  values.performed_by,
+        result:        values.result,
+        notes:         values.notes || null,
+        next_due_date: values.next_due_date ? values.next_due_date.format('YYYY-MM-DD') : null,
+      })
+      message.success('교정 이력이 등록되었습니다')
+      calForm.resetFields()
+      setCalModalOpen(false)
+      // 이력 새로고침
+      setCalLoading(true)
+      api.get<CalibrationEvent[]>(`/assets/${selected.id}/calibration-history`)
+        .then(r => setCalHistory(r.data))
+        .catch(() => {})
+        .finally(() => setCalLoading(false))
+    } catch {
+      // validateFields 실패 시 아무 것도 하지 않음 (폼 유효성 표시)
+    } finally {
+      setCalSubmitting(false)
+    }
+  }
 
   const filtered = assets.filter(a =>
     search === '' ||
@@ -170,11 +214,41 @@ export default function Assets() {
         />
       </Card>
 
+      {/* ── 교정 등록 Modal ── */}
+      <Modal
+        title={`교정 이력 등록 — ${selected?.name ?? ''}`}
+        open={calModalOpen}
+        onOk={handleCalSubmit}
+        onCancel={() => { setCalModalOpen(false); calForm.resetFields() }}
+        okText="등록"
+        cancelText="취소"
+        confirmLoading={calSubmitting}
+        destroyOnClose
+      >
+        <Form form={calForm} layout="vertical" style={{ marginTop: 8 }}>
+          <Form.Item name="performed_at" label="교정 수행일" rules={[{ required: true, message: '필수 항목' }]}>
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="performed_by" label="담당자" rules={[{ required: true, message: '필수 항목' }]}>
+            <Input placeholder="예: 김민준" />
+          </Form.Item>
+          <Form.Item name="result" label="결과" rules={[{ required: true, message: '필수 항목' }]}>
+            <Select options={[{ value: 'pass', label: '합격' }, { value: 'fail', label: '불합격' }]} />
+          </Form.Item>
+          <Form.Item name="next_due_date" label="다음 교정 예정일">
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="notes" label="비고">
+            <Input.TextArea rows={2} placeholder="특이사항 입력 (선택)" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
       {/* ── 상세 Drawer ── */}
       <Drawer
         title={selected?.name}
         open={!!selected}
-        onClose={() => setSelected(null)}
+        onClose={() => { setSelected(null); setCalHistory([]); setCalModalOpen(false); calForm.resetFields() }}
         width={520}
       >
         {selected && (
@@ -194,8 +268,24 @@ export default function Assets() {
               </Descriptions.Item>
             </Descriptions>
 
-            {/* 교정 정보 — 시나리오 01 */}
-            <Card title="교정 정보" size="small" extra={<ToolOutlined />}>
+            {/* 교정 정보 — 시나리오 01 + calibration history */}
+            <Card
+              title="교정 정보"
+              size="small"
+              extra={
+                <Space size={8}>
+                  <ToolOutlined />
+                  <Button
+                    size="small"
+                    type="primary"
+                    icon={<PlusOutlined />}
+                    onClick={() => setCalModalOpen(true)}
+                  >
+                    교정 등록
+                  </Button>
+                </Space>
+              }
+            >
               {(() => {
                 const s = selected.calibration_status
                 const color = s === '유효' ? '#52c41a' : s === '만료임박' ? '#faad14' : s === '만료' ? '#ff4d4f' : '#8c8c8c'
@@ -204,7 +294,7 @@ export default function Assets() {
                     <Descriptions.Item label="교정 상태">
                       <Text style={{ color, fontWeight: 700 }}>{s}</Text>
                     </Descriptions.Item>
-                    <Descriptions.Item label="만료일">
+                    <Descriptions.Item label="다음 만료일">
                       {selected.calibration_due_date
                         ? <Text style={{ color: s === '만료' || s === '만료임박' ? color : undefined }}>
                             {selected.calibration_due_date}
@@ -217,6 +307,47 @@ export default function Assets() {
                   </Descriptions>
                 )
               })()}
+
+              {/* 교정 수행 이력 */}
+              <div style={{ marginTop: 12 }}>
+                <Text strong style={{ fontSize: 12 }}>교정 수행 이력</Text>
+                <Spin spinning={calLoading} size="small">
+                  {calHistory.length === 0 && !calLoading ? (
+                    <Text type="secondary" style={{ display: 'block', fontSize: 12, marginTop: 6 }}>이력 없음</Text>
+                  ) : (
+                    <Timeline
+                      style={{ marginTop: 8 }}
+                      items={calHistory.map(ev => ({
+                        dot: ev.result === 'pass'
+                          ? <CheckCircleFilled style={{ color: '#52c41a', fontSize: 13 }} />
+                          : <CloseCircleFilled style={{ color: '#ff4d4f', fontSize: 13 }} />,
+                        children: (
+                          <div style={{ fontSize: 12 }}>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                              <Text strong style={{ fontSize: 12 }}>
+                                {dayjs(ev.performed_at).format('YYYY-MM-DD')}
+                              </Text>
+                              <Tag
+                                color={ev.result === 'pass' ? 'success' : 'error'}
+                                style={{ fontSize: 10, margin: 0 }}
+                              >
+                                {ev.result === 'pass' ? '합격' : '불합격'}
+                              </Tag>
+                            </div>
+                            <Text type="secondary" style={{ fontSize: 11 }}>
+                              담당: {ev.performed_by}
+                              {ev.next_due_date && ` · 다음 교정: ${ev.next_due_date}`}
+                            </Text>
+                            {ev.notes && (
+                              <div style={{ color: '#595959', fontSize: 11, marginTop: 2 }}>{ev.notes}</div>
+                            )}
+                          </div>
+                        ),
+                      }))}
+                    />
+                  )}
+                </Spin>
+              </div>
             </Card>
 
             {/* 관리 에이전트 */}

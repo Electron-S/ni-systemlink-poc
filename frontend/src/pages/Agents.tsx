@@ -33,8 +33,7 @@ export default function Agents() {
     ]).then(([ar, asr]) => {
       setAgents(ar.data)
       setAssets(asr.data)
-      setLoading(false)
-    })
+    }).catch(() => {}).finally(() => setLoading(false))
   }
 
   useEffect(load, [])

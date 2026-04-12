@@ -63,8 +63,7 @@ export default function Deployments() {
     ]).then(([dr, ar]) => {
       setDeployments(dr.data)
       setAssets(ar.data)
-      setLoading(false)
-    })
+    }).catch(() => {}).finally(() => setLoading(false))
   }
 
   useEffect(load, [])

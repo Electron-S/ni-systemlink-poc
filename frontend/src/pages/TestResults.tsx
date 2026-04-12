@@ -11,8 +11,9 @@ import {
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, BarChart, Bar, Cell,
+  ComposedChart, Line, ReferenceLine,
 } from 'recharts'
-import api, { TestResult, TestStats, Asset } from '../api/client'
+import api, { TestResult, TestStats, Asset, TestStep, MeasurementDetail, WaveformData } from '../api/client'
 import dayjs from 'dayjs'
 
 const { Text, Title } = Typography
@@ -97,8 +98,7 @@ export default function TestResults() {
     ]).then(([rr, sr]) => {
       setResults(rr.data)
       setStats(sr.data)
-      setLoading(false)
-    })
+    }).catch(() => {}).finally(() => setLoading(false))
   }
 
   useEffect(load, [days, statusFilter, assetFilter, cornerFilter, silRevFilter, dutFilter, dateRange])
@@ -144,7 +144,7 @@ export default function TestResults() {
     },
   ]
 
-  const cornerStats = (stats as any)?.corner_stats ?? []
+  const cornerStats = stats?.corner_stats ?? []
 
   return (
     <div>
@@ -394,6 +394,33 @@ function TestReport({ result }: { result: TestResult }) {
         <Descriptions.Item label="완료">{dayjs(result.completed_at).format('YYYY-MM-DD HH:mm:ss')}</Descriptions.Item>
       </Descriptions>
 
+      {/* 조건별 측정 결과 (규격 대비) */}
+      {result.measurement_details && result.measurement_details.length > 0 && (
+        <>
+          <Divider style={{ margin: '4px 0' }} />
+          <MeasurementTable details={result.measurement_details} />
+        </>
+      )}
+
+      {/* 파형 데이터 */}
+      {result.waveform_data && (
+        <>
+          <Divider style={{ margin: '4px 0' }} />
+          <WaveformChart wf={result.waveform_data} />
+        </>
+      )}
+
+      {/* 테스트 스텝 */}
+      {result.steps && result.steps.length > 0 && (
+        <>
+          <Divider style={{ margin: '4px 0' }} />
+          <div>
+            <Text strong style={{ fontSize: 14 }}>테스트 스텝</Text>
+            <StepBreakdown steps={result.steps} />
+          </div>
+        </>
+      )}
+
       {/* 측정값 */}
       {measurements.length > 0 && (
         <>
@@ -430,5 +457,181 @@ function TestReport({ result }: { result: TestResult }) {
         </>
       )}
     </Space>
+  )
+}
+
+// ── 조건별 측정 결과 테이블 ───────────────────────────────────────────────────
+
+function MeasurementTable({ details }: { details: MeasurementDetail[] }) {
+  const failCount = details.filter(d => d.status === 'fail').length
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <Text strong style={{ fontSize: 14 }}>조건별 측정 결과</Text>
+        {failCount > 0 && (
+          <Tag color="error">{failCount}개 규격 이탈</Tag>
+        )}
+      </div>
+      <Table
+        dataSource={details.map((d, i) => ({ ...d, key: i }))}
+        size="small"
+        pagination={false}
+        rowClassName={(r: MeasurementDetail) => r.status === 'fail' ? 'measurement-fail-row' : ''}
+        columns={[
+          {
+            title: '측정 항목', dataIndex: 'name', width: 160,
+            render: (v: string) => <Text style={{ fontSize: 12 }}>{v}</Text>,
+          },
+          {
+            title: '조건', dataIndex: 'condition',
+            render: (v: string) => <Text type="secondary" style={{ fontSize: 11 }}>{v}</Text>,
+          },
+          {
+            title: '측정값', dataIndex: 'value', width: 100, align: 'right' as const,
+            render: (v: number, r: MeasurementDetail) => (
+              <Text strong style={{ color: r.status === 'fail' ? '#ff4d4f' : 'inherit', fontSize: 12 }}>
+                {v} {r.unit}
+              </Text>
+            ),
+          },
+          {
+            title: '규격', width: 140,
+            render: (_: unknown, r: MeasurementDetail) => {
+              const parts = []
+              if (r.spec_min !== null) parts.push(`≥ ${r.spec_min}`)
+              if (r.spec_max !== null) parts.push(`≤ ${r.spec_max}`)
+              return <Text type="secondary" style={{ fontSize: 11 }}>{parts.join('  ') || '—'} {r.unit}</Text>
+            },
+          },
+          {
+            title: '판정', dataIndex: 'status', width: 80, align: 'center' as const,
+            render: (v: string) => (
+              <Tag color={v === 'pass' ? 'success' : v === 'fail' ? 'error' : 'default'} style={{ fontSize: 10, margin: 0 }}>
+                {v === 'pass' ? '합격' : v === 'fail' ? '불합격' : v}
+              </Tag>
+            ),
+          },
+        ]}
+      />
+      <style>{`.measurement-fail-row td { background: #fff1f0 !important; }`}</style>
+    </div>
+  )
+}
+
+// ── 파형 차트 ─────────────────────────────────────────────────────────────────
+
+function WaveformChart({ wf }: { wf: WaveformData }) {
+  const data = wf.x.map((x, i) => ({ x, y: wf.y[i] }))
+  const strokeColor = wf.is_fail ? '#ff4d4f' : '#52c41a'
+
+  // x축 tick 간격을 데이터 길이에 맞게 동적으로 산출
+  const xMin = wf.x[0] ?? 0
+  const xMax = wf.x[wf.x.length - 1] ?? 1
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <Text strong style={{ fontSize: 14 }}>{wf.name}</Text>
+        {wf.is_fail
+          ? <Tag color="error">규격 초과</Tag>
+          : <Tag color="success">규격 내</Tag>}
+      </div>
+      <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
+        {wf.meta}
+      </Text>
+      <ResponsiveContainer width="100%" height={180}>
+        <ComposedChart data={data} margin={{ top: 8, right: 20, bottom: 20, left: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis
+            dataKey="x"
+            type="number"
+            domain={[xMin, xMax]}
+            label={{ value: wf.x_label, position: 'insideBottom', offset: -12, fontSize: 11 }}
+            tick={{ fontSize: 10 }}
+            tickCount={6}
+          />
+          <YAxis
+            label={{ value: wf.y_label, angle: -90, position: 'insideLeft', offset: 10, fontSize: 11 }}
+            tick={{ fontSize: 10 }}
+            width={55}
+          />
+          <Tooltip
+            formatter={(v: number) => [`${v} ${wf.y_label.match(/\((.+)\)/)?.[1] ?? ''}`, wf.name]}
+            labelFormatter={(l: number) => `${wf.x_label}: ${l}`}
+          />
+          {wf.spec_max !== null && (
+            <ReferenceLine y={wf.spec_max} stroke="#ff4d4f" strokeDasharray="4 2"
+              label={{ value: `상한 ${wf.spec_max}`, position: 'insideTopRight', fontSize: 10, fill: '#ff4d4f' }} />
+          )}
+          {wf.spec_min !== null && (
+            <ReferenceLine y={wf.spec_min} stroke="#ff4d4f" strokeDasharray="4 2"
+              label={{ value: `하한 ${wf.spec_min}`, position: 'insideBottomRight', fontSize: 10, fill: '#ff4d4f' }} />
+          )}
+          <Line type="linear" dataKey="y" dot={false} stroke={strokeColor} strokeWidth={1.5} isAnimationActive={false} />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+const STEP_STATUS_COLOR: Record<string, string> = {
+  pass: '#52c41a', fail: '#ff4d4f', error: '#faad14', skip: '#d9d9d9',
+}
+const STEP_STATUS_LABEL: Record<string, string> = {
+  pass: '합격', fail: '불합격', error: '오류', skip: '건너뜀',
+}
+
+function StepBreakdown({ steps }: { steps: TestStep[] }) {
+  const totalMs = steps.reduce((s, st) => s + (st.status !== 'skip' ? st.duration_ms : 0), 0)
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      {steps.map(step => {
+        const isFailed = step.status === 'fail' || step.status === 'error'
+        const pct = totalMs > 0 && step.status !== 'skip'
+          ? Math.max((step.duration_ms / totalMs) * 100, 2)
+          : 0
+        return (
+          <div
+            key={step.seq}
+            style={{
+              padding: '6px 10px',
+              marginBottom: 4,
+              borderRadius: 6,
+              background: isFailed ? '#fff1f0' : step.status === 'skip' ? '#fafafa' : '#f6ffed',
+              border: `1px solid ${isFailed ? '#ffa39e' : step.status === 'skip' ? '#d9d9d9' : '#b7eb8f'}`,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Text type="secondary" style={{ fontSize: 11, minWidth: 18 }}>{step.seq}.</Text>
+              <Text style={{ flex: 1, fontSize: 12 }}>{step.name}</Text>
+              <Tag
+                style={{ fontSize: 10, margin: 0 }}
+                color={step.status === 'pass' ? 'success' : step.status === 'fail' ? 'error' : step.status === 'error' ? 'warning' : 'default'}
+              >
+                {STEP_STATUS_LABEL[step.status]}
+              </Tag>
+              {step.status !== 'skip' && (
+                <Text type="secondary" style={{ fontSize: 11, minWidth: 60, textAlign: 'right' }}>
+                  {step.duration_ms >= 1000
+                    ? `${(step.duration_ms / 1000).toFixed(1)}s`
+                    : `${step.duration_ms.toFixed(0)}ms`}
+                </Text>
+              )}
+            </div>
+            {pct > 0 && (
+              <div style={{ height: 3, background: '#f0f0f0', borderRadius: 2, marginTop: 4 }}>
+                <div style={{ height: 3, width: `${pct}%`, background: STEP_STATUS_COLOR[step.status], borderRadius: 2 }} />
+              </div>
+            )}
+            {step.error_msg && (
+              <Text type="danger" style={{ fontSize: 11, display: 'block', marginTop: 2 }}>
+                {step.error_msg}
+              </Text>
+            )}
+          </div>
+        )
+      })}
+    </div>
   )
 }

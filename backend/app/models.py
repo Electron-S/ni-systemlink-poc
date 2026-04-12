@@ -67,8 +67,9 @@ class Asset(Base):
     calibration_due_date      = Column(Date, nullable=True)   # 다음 교정 만료일
     calibration_interval_days = Column(Integer, default=365)  # 교정 주기 (일)
 
-    test_results = relationship("TestResult", back_populates="asset", cascade="all, delete-orphan")
-    alarms = relationship("Alarm", back_populates="asset", cascade="all, delete-orphan")
+    test_results        = relationship("TestResult",        back_populates="asset", cascade="all, delete-orphan")
+    alarms              = relationship("Alarm",             back_populates="asset", cascade="all, delete-orphan")
+    calibration_events  = relationship("CalibrationEvent", back_populates="asset", cascade="all, delete-orphan")
 
 
 class Deployment(Base):
@@ -128,6 +129,13 @@ class TestResult(Base):
     corner         = Column(String, nullable=True)              # 공정 코너 (TT/FF/SS/FS/SF)
     recipe_version = Column(String, nullable=True)              # 테스트 레시피 버전
 
+    # ── 스텝 계층 (step-level traceability) ──────────────────────────────────
+    steps = Column(JSON, nullable=True)  # [{seq, name, status, duration_ms, error_msg}]
+
+    # ── 상세 측정 데이터 (조건 × 규격 × 판정) ────────────────────────────────
+    measurement_details = Column(JSON, nullable=True)  # [{name, condition, value, unit, spec_min, spec_max, status}]
+    waveform_data       = Column(JSON, nullable=True)  # {name, x_label, y_label, x[], y[], spec_min, spec_max, is_fail, meta}
+
     asset = relationship("Asset", back_populates="test_results")
 
 
@@ -145,6 +153,21 @@ class Alarm(Base):
     acknowledged_by = Column(String, nullable=True)
 
     asset = relationship("Asset", back_populates="alarms")
+
+
+class CalibrationEvent(Base):
+    """장비별 교정 수행 이력 (시나리오: calibration history)."""
+    __tablename__ = "calibration_events"
+
+    id            = Column(Integer, primary_key=True, index=True)
+    asset_id      = Column(Integer, ForeignKey("assets.id"), nullable=False)
+    performed_at  = Column(DateTime, nullable=False)
+    performed_by  = Column(String(128), nullable=False)
+    result        = Column(String(16), nullable=False)   # pass / fail
+    notes         = Column(Text, nullable=True)
+    next_due_date = Column(Date, nullable=True)
+
+    asset = relationship("Asset", back_populates="calibration_events")
 
 
 class AgentNode(Base):

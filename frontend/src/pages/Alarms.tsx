@@ -30,7 +30,10 @@ export default function Alarms() {
 
   const load = () => {
     setLoading(true)
-    api.get<Alarm[]>('/alarms').then(r => { setAlarms(r.data); setLoading(false) })
+    api.get<Alarm[]>('/alarms')
+      .then(r => setAlarms(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }
 
   useEffect(load, [])

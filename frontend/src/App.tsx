@@ -88,7 +88,7 @@ function AppLayout() {
             <span style={{ fontSize: 24 }}>⚙️</span>
             <div>
               <div style={{ color: '#fff', fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>NI SystemLink</div>
-              <div style={{ color: '#1890ff', fontSize: 11 }}>PMIC PoC v0.2</div>
+              <div style={{ color: '#1890ff', fontSize: 11 }}>내재화 PoC v0.2</div>
             </div>
           </div>
         </div>
@@ -106,7 +106,7 @@ function AppLayout() {
         />
 
         <div style={{ padding: '12px 24px', borderTop: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.45)', fontSize: 11 }}>
-          NI SystemLink PoC — Internal
+          Server 에디션 기준 내재화 검토
         </div>
       </Sider>
 

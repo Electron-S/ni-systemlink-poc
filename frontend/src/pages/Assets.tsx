@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react'
 import {
   Table, Tag, Card, Row, Col, Statistic, Drawer, Descriptions,
   Space, Button, Progress, Typography, Badge, Input, Timeline, Spin,
-  Modal, Form, Select, DatePicker, message,
+  Modal, Form, Select, DatePicker, message, Tabs, Tooltip as AntTooltip,
 } from 'antd'
 import { ReloadOutlined, InfoCircleOutlined, SearchOutlined, RobotOutlined, ToolOutlined,
-  CheckCircleFilled, CloseCircleFilled, PlusOutlined } from '@ant-design/icons'
+  CheckCircleFilled, CloseCircleFilled, PlusOutlined, AppstoreOutlined, UnorderedListOutlined } from '@ant-design/icons'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
-import api, { Asset, AssetMetrics, AgentNode, CalibrationEvent } from '../api/client'
+import api, { Asset, AssetMetrics, AgentNode, CalibrationEvent, ChassisView } from '../api/client'
 import { useRealtimeMetrics } from '../hooks/useWebSocket'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
@@ -39,6 +39,8 @@ export default function Assets() {
   const [calModalOpen, setCalModalOpen] = useState(false)
   const [calSubmitting, setCalSubmitting] = useState(false)
   const [calForm] = Form.useForm()
+  const [chassisData, setChassisData] = useState<ChassisView[]>([])
+  const [chassisLoading, setChassisLoading] = useState(false)
   const { metrics: liveMetrics, events } = useRealtimeMetrics()
 
   const load = () => {
@@ -52,12 +54,20 @@ export default function Assets() {
     }).catch(() => {}).finally(() => setLoading(false))
   }
 
+  const loadChassis = () => {
+    setChassisLoading(true)
+    api.get<ChassisView[]>('/assets/chassis-view')
+      .then(r => setChassisData(r.data))
+      .catch(() => {})
+      .finally(() => setChassisLoading(false))
+  }
+
   // selected 자산을 관리하는 에이전트 찾기
   const managingAgent = selected
     ? agents.find(ag => (ag.managed_asset_ids ?? []).includes(selected.id)) ?? null
     : null
 
-  useEffect(load, [])
+  useEffect(() => { load(); loadChassis() }, [])
 
   // 장비 상태 변경 이벤트 실시간 반영
   useEffect(() => {
@@ -188,31 +198,62 @@ export default function Assets() {
         ))}
       </Row>
 
-      <Card
-        extra={
-          <Space>
-            <Input
-              prefix={<SearchOutlined />}
-              placeholder="장비명, 모델, 위치, 부서 검색"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              allowClear
-              style={{ width: 240 }}
-            />
-            <Button icon={<ReloadOutlined />} onClick={load}>새로고침</Button>
-          </Space>
-        }
-      >
-        <Table
-          dataSource={filtered}
-          columns={columns}
-          rowKey="id"
-          loading={loading}
-          size="small"
-          pagination={{ pageSize: 15 }}
-          onRow={r => ({ onClick: () => { setSelected(r); setHistory([]) }, style: { cursor: 'pointer' } })}
-        />
-      </Card>
+      <Tabs
+        defaultActiveKey="list"
+        items={[
+          {
+            key: 'list',
+            label: <Space><UnorderedListOutlined />자산 목록</Space>,
+            children: (
+              <Card
+                extra={
+                  <Space>
+                    <Input
+                      prefix={<SearchOutlined />}
+                      placeholder="장비명, 모델, 위치, 부서 검색"
+                      value={search}
+                      onChange={e => setSearch(e.target.value)}
+                      allowClear
+                      style={{ width: 240 }}
+                    />
+                    <Button icon={<ReloadOutlined />} onClick={load}>새로고침</Button>
+                  </Space>
+                }
+              >
+                <Table
+                  dataSource={filtered}
+                  columns={columns}
+                  rowKey="id"
+                  loading={loading}
+                  size="small"
+                  pagination={{ pageSize: 15 }}
+                  onRow={r => ({ onClick: () => { setSelected(r); setHistory([]) }, style: { cursor: 'pointer' } })}
+                />
+              </Card>
+            ),
+          },
+          {
+            key: 'chassis',
+            label: <Space><AppstoreOutlined />섀시 배치도</Space>,
+            children: (
+              <Spin spinning={chassisLoading}>
+                <Space direction="vertical" style={{ width: '100%' }} size={16}>
+                  {chassisData.map(cv => (
+                    <ChassisLayout
+                      key={cv.chassis.id}
+                      view={cv}
+                      onModuleClick={a => { setSelected(a); setHistory([]) }}
+                    />
+                  ))}
+                  {!chassisLoading && chassisData.length === 0 && (
+                    <Card><Text type="secondary">섀시 데이터 없음</Text></Card>
+                  )}
+                </Space>
+              </Spin>
+            ),
+          },
+        ]}
+      />
 
       {/* ── 교정 등록 Modal ── */}
       <Modal
@@ -430,5 +471,124 @@ function MetricGauge({ label, value, unit, warn, max = 100 }: {
       <div style={{ fontWeight: 700, marginBottom: 2 }}>{value}{unit}</div>
       <Progress percent={Math.round(pct)} showInfo={false} strokeColor={color} size="small" />
     </div>
+  )
+}
+
+// ── 섀시 배치도 컴포넌트 ──────────────────────────────────────────────────────
+
+const SLOT_STATUS_STYLE: Record<string, { bg: string; border: string; text: string }> = {
+  online:  { bg: '#f6ffed', border: '#52c41a', text: '#237804' },
+  warning: { bg: '#fffbe6', border: '#faad14', text: '#ad6800' },
+  error:   { bg: '#fff1f0', border: '#ff4d4f', text: '#a8071a' },
+  offline: { bg: '#fafafa', border: '#bfbfbf', text: '#595959' },
+}
+
+function ChassisLayout({ view, onModuleClick }: {
+  view: ChassisView
+  onModuleClick: (a: Asset) => void
+}) {
+  const { chassis, total_slots, occupied, slots } = view
+  const chassisStyle = SLOT_STATUS_STYLE[chassis.status] ?? SLOT_STATUS_STYLE.offline
+
+  return (
+    <Card
+      size="small"
+      style={{ borderColor: chassisStyle.border, borderWidth: 2 }}
+      title={
+        <Space>
+          <Badge status={STATUS_COLOR[chassis.status] as any} />
+          <Text strong>{chassis.name}</Text>
+          <Tag color="blue" style={{ fontSize: 11 }}>{chassis.model}</Tag>
+          <Text type="secondary" style={{ fontSize: 12 }}>{chassis.location} · {chassis.department}</Text>
+        </Space>
+      }
+      extra={
+        <Space>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            슬롯 {occupied}/{total_slots} 사용
+          </Text>
+          <Badge
+            count={occupied}
+            style={{ background: '#1890ff' }}
+            overflowCount={99}
+          />
+        </Space>
+      }
+    >
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {slots.map(slot => {
+          if (slot.is_system_slot) {
+            // 슬롯 1: 시스템 컨트롤러 고정
+            return (
+              <div key={slot.slot_number} style={{
+                width: 110, minHeight: 72, border: '1px solid #d9d9d9',
+                borderRadius: 6, background: '#f5f5f5',
+                padding: '6px 8px', boxSizing: 'border-box',
+              }}>
+                <div style={{ fontSize: 10, color: '#8c8c8c', marginBottom: 2 }}>슬롯 {slot.slot_number}</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#595959' }}>System Controller</div>
+                <Tag style={{ fontSize: 9, marginTop: 4, padding: '0 4px' }}>내장</Tag>
+              </div>
+            )
+          }
+
+          if (!slot.module) {
+            // 빈 슬롯
+            return (
+              <div key={slot.slot_number} style={{
+                width: 110, minHeight: 72,
+                border: '1px dashed #d9d9d9', borderRadius: 6,
+                background: '#fafafa', padding: '6px 8px',
+                display: 'flex', flexDirection: 'column',
+                justifyContent: 'space-between', boxSizing: 'border-box',
+              }}>
+                <div style={{ fontSize: 10, color: '#bfbfbf' }}>슬롯 {slot.slot_number}</div>
+                <div style={{ fontSize: 11, color: '#d9d9d9', textAlign: 'center' }}>— 빈 슬롯 —</div>
+              </div>
+            )
+          }
+
+          const m = slot.module
+          const st = SLOT_STATUS_STYLE[m.status] ?? SLOT_STATUS_STYLE.offline
+          return (
+            <AntTooltip
+              key={slot.slot_number}
+              title={
+                <div style={{ fontSize: 12 }}>
+                  <div><b>{m.name}</b></div>
+                  <div>모델: {m.model}</div>
+                  <div>채널: {m.channel_count}ch</div>
+                  <div>드라이버: {m.driver_version}</div>
+                  <div>상태: {STATUS_LABEL[m.status]}</div>
+                </div>
+              }
+            >
+              <div
+                onClick={() => onModuleClick(m)}
+                style={{
+                  width: 110, minHeight: 72,
+                  border: `2px solid ${st.border}`,
+                  borderRadius: 6, background: st.bg,
+                  padding: '6px 8px', cursor: 'pointer',
+                  boxSizing: 'border-box',
+                  transition: 'box-shadow 0.2s',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.boxShadow = `0 0 0 2px ${st.border}55`)}
+                onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}
+              >
+                <div style={{ fontSize: 10, color: '#8c8c8c', marginBottom: 2 }}>슬롯 {slot.slot_number}</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: st.text, lineHeight: 1.3 }}>
+                  {m.name.replace(/-LAB\d+-\d+$/, '').replace(/-[A-Z]+-\d+$/, '')}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                  <Tag style={{ fontSize: 9, padding: '0 4px', margin: 0 }}>{m.asset_type}</Tag>
+                  <Badge status={STATUS_COLOR[m.status] as any} />
+                </div>
+              </div>
+            </AntTooltip>
+          )
+        })}
+      </div>
+    </Card>
   )
 }

@@ -67,9 +67,15 @@ class Asset(Base):
     calibration_due_date      = Column(Date, nullable=True)   # 다음 교정 만료일
     calibration_interval_days = Column(Integer, default=365)  # 교정 주기 (일)
 
+    # ── 섀시 슬롯 관계 ────────────────────────────────────────────────────────
+    chassis_id   = Column(Integer, ForeignKey("assets.id"), nullable=True)  # 장착된 섀시 ID
+    slot_number  = Column(Integer, nullable=True)                            # 슬롯 번호
+
     test_results        = relationship("TestResult",        back_populates="asset", cascade="all, delete-orphan")
     alarms              = relationship("Alarm",             back_populates="asset", cascade="all, delete-orphan")
     calibration_events  = relationship("CalibrationEvent", back_populates="asset", cascade="all, delete-orphan")
+    modules             = relationship("Asset", foreign_keys="Asset.chassis_id",
+                                       primaryjoin="Asset.id == Asset.chassis_id")
 
 
 class Deployment(Base):

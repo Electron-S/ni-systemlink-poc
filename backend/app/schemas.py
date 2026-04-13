@@ -56,6 +56,8 @@ class AssetOut(AssetBase):
     status: str
     last_seen: Optional[datetime]
     created_at: datetime
+    chassis_id:  Optional[int] = None
+    slot_number: Optional[int] = None
 
     @computed_field  # type: ignore[misc]
     @property
@@ -69,6 +71,25 @@ class AssetOut(AssetBase):
         if delta <= 30:
             return "만료임박"
         return "유효"
+
+    model_config = {"from_attributes": True}
+
+
+# ── ChassisView ───────────────────────────────────────────────────────────────
+
+class ChassisSlot(BaseModel):
+    slot_number: int
+    is_system_slot: bool   # 슬롯 1 (시스템 컨트롤러)
+    module: Optional[AssetOut] = None
+
+    model_config = {"from_attributes": True}
+
+
+class ChassisView(BaseModel):
+    chassis: AssetOut
+    total_slots: int
+    occupied: int
+    slots: List[ChassisSlot]
 
     model_config = {"from_attributes": True}
 

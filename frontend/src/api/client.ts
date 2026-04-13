@@ -49,6 +49,21 @@ export interface Asset {
   calibration_due_date: string | null        // YYYY-MM-DD
   calibration_interval_days: number
   calibration_status: '유효' | '만료임박' | '만료' | '미등록'
+  chassis_id:  number | null
+  slot_number: number | null
+}
+
+export interface ChassisSlot {
+  slot_number: number
+  is_system_slot: boolean
+  module: Asset | null
+}
+
+export interface ChassisView {
+  chassis: Asset
+  total_slots: number
+  occupied: number
+  slots: ChassisSlot[]
 }
 
 export interface UtilizationEntry {

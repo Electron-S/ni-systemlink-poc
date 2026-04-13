@@ -207,6 +207,34 @@ def seed(db: Session):
 
     db.flush()
 
+    # ── 섀시-슬롯 관계 설정 ───────────────────────────────────────────────────
+    # 자산 이름 → 객체 매핑
+    asset_by_name = {a.name: a for a in assets}
+
+    # (섀시 이름, 모듈 이름, 슬롯 번호) 매핑
+    SLOT_MAP = [
+        # PXIe-1084-LAB1-01 (18슬롯)
+        ("PXIe-1084-LAB1-01", "PXIe-4162-LAB1-01", 2),
+        ("PXIe-1084-LAB1-01", "PXIe-4162-LAB1-02", 3),
+        ("PXIe-1084-LAB1-01", "PXIe-4081-LAB1-01", 4),
+        ("PXIe-1084-LAB1-01", "PXIe-5124-LAB1-01", 5),
+        ("PXIe-1084-LAB1-01", "PXIe-6674T-LAB1-01", 7),
+        # PXIe-1084-LAB2-01 (18슬롯)
+        ("PXIe-1084-LAB2-01", "PXIe-4163-LAB2-01", 2),
+        ("PXIe-1084-LAB2-01", "PXIe-4081-LAB2-01", 4),
+        ("PXIe-1084-LAB2-01", "PXIe-4051-LAB2-01", 6),
+        # PXIe-1082-EMC-01 (9슬롯)
+        ("PXIe-1082-EMC-01",  "PXIe-5124-REL-01",  2),
+    ]
+    for chassis_name, module_name, slot in SLOT_MAP:
+        ch = asset_by_name.get(chassis_name)
+        mo = asset_by_name.get(module_name)
+        if ch and mo:
+            mo.chassis_id  = ch.id
+            mo.slot_number = slot
+
+    db.flush()
+
     # ── 테스트 결과 (90일) ────────────────────────────────────────────────────
     for _ in range(3000):
         asset = random.choice(assets)

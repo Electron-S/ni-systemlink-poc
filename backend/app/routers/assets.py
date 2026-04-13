@@ -7,6 +7,14 @@ from .. import models, schemas
 from ..database import get_db
 from ..auth import require_engineer
 
+# 섀시 모델별 슬롯 수
+_CHASSIS_SLOTS: dict = {
+    "NI PXIe-1084": 18,
+    "NI PXIe-1082": 9,
+    "NI PXIe-1078": 14,
+    "NI PXIe-1071": 4,
+}
+
 router = APIRouter(prefix="/api/assets", tags=["assets"])
 
 
@@ -22,6 +30,43 @@ def list_assets(
     if asset_type:
         q = q.filter(models.Asset.asset_type == asset_type)
     return q.order_by(models.Asset.name).all()
+
+
+@router.get("/chassis-view", response_model=List[schemas.ChassisView])
+def get_chassis_view(db: Session = Depends(get_db)):
+    """섀시별 슬롯 배치 현황 — 각 섀시에 어떤 모듈이 몇 번 슬롯에 장착됐는지 반환."""
+    chassis_list = (
+        db.query(models.Asset)
+          .filter(models.Asset.asset_type == "Chassis")
+          .order_by(models.Asset.name)
+          .all()
+    )
+    result = []
+    for ch in chassis_list:
+        total = _CHASSIS_SLOTS.get(ch.model, 18)
+        modules = (
+            db.query(models.Asset)
+              .filter(models.Asset.chassis_id == ch.id)
+              .order_by(models.Asset.slot_number)
+              .all()
+        )
+        module_map = {m.slot_number: m for m in modules if m.slot_number}
+
+        slots = []
+        for s in range(1, total + 1):
+            slots.append(schemas.ChassisSlot(
+                slot_number=s,
+                is_system_slot=(s == 1),
+                module=module_map.get(s),
+            ))
+
+        result.append(schemas.ChassisView(
+            chassis=ch,
+            total_slots=total,
+            occupied=len(modules),
+            slots=slots,
+        ))
+    return result
 
 
 @router.get("/{asset_id}", response_model=schemas.AssetOut)

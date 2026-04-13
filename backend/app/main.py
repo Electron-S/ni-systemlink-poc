@@ -14,7 +14,7 @@ from .database import SessionLocal
 from .dummy_data import seed
 from .simulator import SimulationEngine
 from .worker import DeploymentWorker
-from .routers import assets, deployments, test_results, alarms, systems, agents, audit_logs
+from .routers import assets, deployments, test_results, alarms, systems, agents, audit_logs, work_orders, specs
 
 
 # ── WebSocket 연결 관리자 ─────────────────────────────────────────────────────
@@ -167,6 +167,8 @@ app.include_router(alarms.router)
 app.include_router(systems.router)
 app.include_router(agents.router)
 app.include_router(audit_logs.router)
+app.include_router(work_orders.router)
+app.include_router(specs.router)
 
 
 @app.get("/health")

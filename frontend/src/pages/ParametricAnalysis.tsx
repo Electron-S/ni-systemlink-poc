@@ -8,12 +8,14 @@ import {
   Card, Row, Col, Select, Space, Typography, Table, Tag, Spin,
   DatePicker, Segmented, Tooltip as AntTooltip, Badge,
 } from 'antd'
+
 import type { RangePickerProps } from 'antd/es/date-picker'
 import {
   ScatterChart, Scatter, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, ReferenceLine,
+  LineChart, Line,
 } from 'recharts'
-import api, { Asset, ParametricData, ParametricGroupStat, CrossAnalysis } from '../api/client'
+import api, { Asset, ParametricData, ParametricGroupStat, CrossAnalysis, SPCData } from '../api/client'
 import dayjs from 'dayjs'
 
 const { Text, Title } = Typography
@@ -88,6 +90,10 @@ export default function ParametricAnalysis() {
   const [crossData, setCrossData]     = useState<CrossAnalysis | null>(null)
   const [crossLoading, setCrossLoading] = useState(false)
 
+  // SPC 제어 차트 (Feature 5)
+  const [spcData, setSpcData]       = useState<SPCData | null>(null)
+  const [spcLoading, setSpcLoading] = useState(false)
+
   useEffect(() => {
     api.get<Asset[]>('/assets').then(r => setAssets(r.data)).catch(() => {})
     api.get<{ keys: string[] }>('/test-results/measurement-keys').then(r => {
@@ -114,6 +120,20 @@ export default function ParametricAnalysis() {
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [measureKey, groupBy, assetFilter, days, dateRange])
+
+  // SPC 데이터 로드
+  useEffect(() => {
+    if (!measureKey) return
+    setSpcLoading(true)
+    const params: Record<string, unknown> = { measurement_key: measureKey }
+    if (dateRange) { params.date_from = dateRange[0]; params.date_to = dateRange[1] }
+    else params.days = days
+    if (assetFilter) params.asset_id = assetFilter
+    api.get<SPCData>('/test-results/spc', { params })
+      .then(r => setSpcData(r.data))
+      .catch(() => {})
+      .finally(() => setSpcLoading(false))
+  }, [measureKey, assetFilter, days, dateRange])
 
   // 교차 분석 데이터 로드
   useEffect(() => {
@@ -278,6 +298,30 @@ export default function ParametricAnalysis() {
         </Col>
       </Row>
 
+      {/* ── SPC 제어 차트 (Feature 5) ── */}
+      <Card
+        title={`SPC 제어 차트 — ${MEASUREMENT_LABELS[measureKey] ?? measureKey}`}
+        extra={
+          spcData?.mean !== null && (
+            <Space size={16}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                μ = {spcData?.mean?.toFixed(4)} &nbsp; σ = {spcData?.std?.toFixed(4)}
+              </Text>
+              <Badge count={`N = ${spcData?.n ?? 0}`} style={{ background: '#1890ff' }} />
+            </Space>
+          )
+        }
+        style={{ marginBottom: 16 }}
+      >
+        <Spin spinning={spcLoading}>
+          {(!spcData || spcData.points.length < 2) ? (
+            <Text type="secondary">데이터 없음 — 측정 항목을 선택하세요</Text>
+          ) : (
+            <SPCChart data={spcData} measureKey={measureKey} />
+          )}
+        </Spin>
+      </Card>
+
       {/* ── 교차 분석 히트맵 (시나리오 11) ── */}
       <Card
         title="교차 분석 — Root Cause"
@@ -300,6 +344,81 @@ export default function ParametricAnalysis() {
           )}
         </Spin>
       </Card>
+    </div>
+  )
+}
+
+function SPCChart({ data, measureKey }: { data: SPCData; measureKey: string }) {
+  const chartData = data.points.map((p, i) => ({
+    index: i + 1,
+    value: p.value,
+    ts:    dayjs(p.started_at).format('MM/DD HH:mm'),
+    ooc:   data.ucl !== null && data.lcl !== null
+           ? (p.value > data.ucl || p.value < data.lcl)
+           : false,
+    status: p.status,
+  }))
+
+  const ootCount = chartData.filter(p => p.ooc).length
+
+  return (
+    <div>
+      {ootCount > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          <Tag color="error">관리한계 이탈 {ootCount}건</Tag>
+          <Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>
+            UCL = {data.ucl?.toFixed(4)} &nbsp; LCL = {data.lcl?.toFixed(4)}
+          </Text>
+        </div>
+      )}
+      <ResponsiveContainer width="100%" height={300}>
+        <LineChart data={chartData} margin={{ top: 8, right: 40, bottom: 8, left: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="index" tick={{ fontSize: 10 }} label={{ value: '샘플 순서', position: 'insideBottomRight', offset: -10, fontSize: 11 }} />
+          <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} />
+          <Tooltip
+            content={({ payload }) => {
+              if (!payload?.length) return null
+              const d = payload[0].payload
+              return (
+                <div style={{ background: '#fff', border: '1px solid #f0f0f0', padding: '8px 12px', borderRadius: 4, fontSize: 12 }}>
+                  <div><b>#{d.index} — {d.ts}</b></div>
+                  <div>값: <b style={{ color: d.ooc ? '#ff4d4f' : '#1890ff' }}>{d.value}</b></div>
+                  {d.ooc && <div style={{ color: '#ff4d4f', fontWeight: 700 }}>⚠ 관리한계 이탈</div>}
+                </div>
+              )
+            }}
+          />
+          {/* UCL */}
+          {data.ucl !== null && (
+            <ReferenceLine y={data.ucl} stroke="#ff4d4f" strokeDasharray="6 3"
+              label={{ value: `UCL ${data.ucl?.toFixed(3)}`, position: 'right', fontSize: 10, fill: '#ff4d4f' }} />
+          )}
+          {/* CL (mean) */}
+          {data.mean !== null && (
+            <ReferenceLine y={data.mean} stroke="#52c41a" strokeDasharray="4 4"
+              label={{ value: `CL ${data.mean?.toFixed(3)}`, position: 'right', fontSize: 10, fill: '#52c41a' }} />
+          )}
+          {/* LCL */}
+          {data.lcl !== null && (
+            <ReferenceLine y={data.lcl} stroke="#ff4d4f" strokeDasharray="6 3"
+              label={{ value: `LCL ${data.lcl?.toFixed(3)}`, position: 'right', fontSize: 10, fill: '#ff4d4f' }} />
+          )}
+          <Line
+            type="monotone" dataKey="value" name={measureKey}
+            stroke="#1890ff" strokeWidth={1.5} dot={(props) => {
+              const { cx, cy, payload } = props as any
+              const color = payload.ooc ? '#ff4d4f' : payload.status === 'fail' ? '#faad14' : '#1890ff'
+              return <circle key={props.key} cx={cx} cy={cy} r={payload.ooc ? 5 : 2.5} fill={color} stroke="#fff" strokeWidth={1} />
+            }}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+      <div style={{ display: 'flex', gap: 16, marginTop: 6 }}>
+        <Space size={4}><div style={{ width: 12, height: 2, background: '#ff4d4f' }} /><Text style={{ fontSize: 11 }}>UCL / LCL (±3σ)</Text></Space>
+        <Space size={4}><div style={{ width: 12, height: 2, background: '#52c41a', borderTop: '2px dashed #52c41a' }} /><Text style={{ fontSize: 11 }}>CL (평균)</Text></Space>
+        <Space size={4}><div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ff4d4f' }} /><Text style={{ fontSize: 11 }}>관리한계 이탈</Text></Space>
+      </div>
     </div>
   )
 }

@@ -176,6 +176,44 @@ class CalibrationEvent(Base):
     asset = relationship("Asset", back_populates="calibration_events")
 
 
+class WorkOrder(Base):
+    """작업 지시 — 장비 예약 및 테스트 스케줄링 (Feature 1)."""
+    __tablename__ = "work_orders"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    title           = Column(String(256), nullable=False)
+    asset_id        = Column(Integer, ForeignKey("assets.id"), nullable=False)
+    operator        = Column(String(128), nullable=False)
+    scheduled_start = Column(DateTime, nullable=False)
+    scheduled_end   = Column(DateTime, nullable=False)
+    test_plan       = Column(String(256), nullable=True)   # 테스트 계획명
+    dut_id          = Column(String(128), nullable=True)   # 대상 DUT ID
+    priority        = Column(String(16), default="normal")   # low / normal / high / urgent
+    status          = Column(String(32), default="scheduled") # scheduled / in_progress / completed / cancelled
+    notes           = Column(Text, nullable=True)
+    created_at      = Column(DateTime, server_default=func.now())
+
+    asset = relationship("Asset")
+
+
+class TestSpec(Base):
+    """테스트 규격 관리 — 측정 항목별 합격 기준 (Feature 3)."""
+    __tablename__ = "test_specs"
+
+    id               = Column(Integer, primary_key=True, index=True)
+    product          = Column(String(128), index=True, nullable=False)   # PMIC-A100 등
+    spec_version     = Column(String(64),  nullable=False, default="v1.0")
+    corner           = Column(String(32),  nullable=True)   # TT / FF / SS / 공통=NULL
+    measurement_name = Column(String(128), index=True, nullable=False)
+    spec_min         = Column(Float, nullable=True)
+    spec_max         = Column(Float, nullable=True)
+    unit             = Column(String(32), nullable=True)
+    is_active        = Column(Boolean, default=True)
+    created_by       = Column(String(128), nullable=False)
+    created_at       = Column(DateTime, server_default=func.now())
+    notes            = Column(Text, nullable=True)
+
+
 class AgentNode(Base):
     __tablename__ = "agent_nodes"
 

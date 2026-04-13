@@ -284,6 +284,82 @@ export interface CrossAnalysis {
   col_label: string
 }
 
+// ── WorkOrder ─────────────────────────────────────────────────────────────────
+
+export interface WorkOrder {
+  id: number
+  title: string
+  asset_id: number
+  asset_name: string | null
+  operator: string
+  scheduled_start: string
+  scheduled_end: string
+  test_plan: string | null
+  dut_id: string | null
+  priority: 'low' | 'normal' | 'high' | 'urgent'
+  status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
+  notes: string | null
+  created_at: string
+}
+
+// ── TestSpec ──────────────────────────────────────────────────────────────────
+
+export interface TestSpec {
+  id: number
+  product: string
+  spec_version: string
+  corner: string | null
+  measurement_name: string
+  spec_min: number | null
+  spec_max: number | null
+  unit: string | null
+  is_active: boolean
+  created_by: string
+  created_at: string
+  notes: string | null
+}
+
+// ── FPY ───────────────────────────────────────────────────────────────────────
+
+export interface FPYResult {
+  overall_fpy: number
+  total_duts: number
+  pass_duts: number
+  fail_duts: number
+  fpy_by_test: { test_name: string; total: number; pass: number; fpy: number }[]
+  failure_pareto: { step: string; count: number }[]
+}
+
+// ── SPC ───────────────────────────────────────────────────────────────────────
+
+export interface SPCData {
+  points: { value: number; started_at: string; status: string; dut_id: string | null }[]
+  mean: number | null
+  ucl: number | null
+  lcl: number | null
+  std: number | null
+  n: number
+}
+
+// ── CrossSystemComparison ─────────────────────────────────────────────────────
+
+export interface AgentComparisonData {
+  agents: { agent_id: string; hostname: string; status: string; version: string; packages: Record<string, string> }[]
+  package_names: string[]
+  mismatch_packages: string[]
+}
+
+// ── Utilization Detail ────────────────────────────────────────────────────────
+
+export interface UtilizationDetailEntry {
+  date: string
+  asset_name: string
+  test_count: number
+  pass_count: number
+  pass_rate: number
+  total_duration_s: number
+}
+
 // ── WebSocket ────────────────────────────────────────────────────────────────
 
 export interface WSEvent {

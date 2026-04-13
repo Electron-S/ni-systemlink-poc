@@ -143,8 +143,107 @@ from .test_generators import (
 )
 
 
+def _seed_new_models(db: Session):
+    """새로 추가된 모델 시드 — 기존 DB에서도 추가 실행."""
+    now = datetime.utcnow()
+    assets = db.query(models.Asset).all()
+    if not assets:
+        return
+
+    # ── WorkOrder 시드 ────────────────────────────────────────────────────────
+    if db.query(models.WorkOrder).count() == 0:
+        smu_assets  = [a for a in assets if a.asset_type == "SMU"]
+        dmm_assets  = [a for a in assets if a.asset_type == "DMM"]
+        scope_assets= [a for a in assets if a.asset_type == "Oscilloscope"]
+        test_assets = smu_assets + dmm_assets + scope_assets
+
+        work_order_data = [
+            {"title": "PMIC-A100 출력 전압 정확도 검사 — MP 양산 배치",
+             "test_plan": "출력 전압 정확도 검사", "priority": "high", "status": "completed",
+             "days_from_now": -5, "dur_hours": 4},
+            {"title": "PXIe-4162 정기 교정 전 사전 검증",
+             "test_plan": "부하 레귤레이션 측정", "priority": "normal", "status": "completed",
+             "days_from_now": -3, "dur_hours": 2},
+            {"title": "LOT-2025Q2-022 ES2.0 전압 코너 스크리닝",
+             "test_plan": "라인 레귤레이션 측정", "priority": "urgent", "status": "in_progress",
+             "days_from_now": 0, "dur_hours": 6},
+            {"title": "PMIC-B200 과전류 보호 검증 — REV-D",
+             "test_plan": "과전류 보호 검증", "priority": "high", "status": "scheduled",
+             "days_from_now": 1, "dur_hours": 3},
+            {"title": "FF/SS 코너 효율 측정 — LOT-2025Q2-022",
+             "test_plan": "전력 변환 효율 분석", "priority": "normal", "status": "scheduled",
+             "days_from_now": 2, "dur_hours": 5},
+            {"title": "온도 드리프트 신뢰성 분석 — ES2.0 샘플",
+             "test_plan": "온도 드리프트 분석", "priority": "normal", "status": "scheduled",
+             "days_from_now": 3, "dur_hours": 8},
+            {"title": "정착 시간 측정 — PMIC-C300 v2.0 레시피",
+             "test_plan": "정착 시간 측정", "priority": "low", "status": "scheduled",
+             "days_from_now": 5, "dur_hours": 2},
+            {"title": "소프트 스타트 파형 분석 — 신규 보드 REV-D",
+             "test_plan": "소프트 스타트 파형 분석", "priority": "normal", "status": "scheduled",
+             "days_from_now": 7, "dur_hours": 3},
+        ]
+        for i, spec in enumerate(work_order_data):
+            asset = test_assets[i % len(test_assets)] if test_assets else assets[0]
+            start = now + timedelta(days=spec["days_from_now"])
+            db.add(models.WorkOrder(
+                title=spec["title"],
+                asset_id=asset.id,
+                operator=random.choice(OPERATORS),
+                scheduled_start=start,
+                scheduled_end=start + timedelta(hours=spec["dur_hours"]),
+                test_plan=spec["test_plan"],
+                dut_id=random.choice(DUT_IDS),
+                priority=spec["priority"],
+                status=spec["status"],
+            ))
+        db.commit()
+        print("[seed] WorkOrder 더미 데이터 삽입 완료.")
+
+    # ── TestSpec 시드 ─────────────────────────────────────────────────────────
+    if db.query(models.TestSpec).count() == 0:
+        specs_data = []
+        # 제품 PMIC-A100 / PMIC-B200 / PMIC-C300
+        for product in ["PMIC-A100", "PMIC-B200", "PMIC-C300"]:
+            for corner in [None, "TT", "FF", "SS", "FS", "SF"]:
+                corner_label = corner or "공통"
+                # 출력 전압
+                offset = 0.02 if corner in ("FF",) else -0.02 if corner in ("SS",) else 0.0
+                specs_data.append({"product": product, "spec_version": "v1.0", "corner": corner,
+                    "measurement_name": "vout_v",
+                    "spec_min": round(0.98 + offset, 3), "spec_max": round(1.02 + offset, 3), "unit": "V",
+                    "created_by": "engineer"})
+                # 변환 효율
+                eff_min = 80.0 if corner in ("SS", "FS", "SF") else 85.0
+                specs_data.append({"product": product, "spec_version": "v1.0", "corner": corner,
+                    "measurement_name": "efficiency_pct",
+                    "spec_min": eff_min, "spec_max": None, "unit": "%",
+                    "created_by": "engineer"})
+                # 리플 전압
+                ripple_max = 30.0 if corner == "TT" else 40.0
+                specs_data.append({"product": product, "spec_version": "v1.0", "corner": corner,
+                    "measurement_name": "ripple_mv",
+                    "spec_min": None, "spec_max": ripple_max, "unit": "mV",
+                    "created_by": "engineer"})
+                # PSRR
+                specs_data.append({"product": product, "spec_version": "v1.0", "corner": corner,
+                    "measurement_name": "psrr_db",
+                    "spec_min": 40.0, "spec_max": None, "unit": "dB",
+                    "created_by": "engineer"})
+                # 정착 시간
+                specs_data.append({"product": product, "spec_version": "v1.0", "corner": corner,
+                    "measurement_name": "settling_us",
+                    "spec_min": None, "spec_max": 50.0, "unit": "μs",
+                    "created_by": "engineer"})
+        for sd in specs_data:
+            db.add(models.TestSpec(**sd))
+        db.commit()
+        print(f"[seed] TestSpec {len(specs_data)}건 삽입 완료.")
+
+
 def seed(db: Session):
     if db.query(models.Asset).count() > 0:
+        _seed_new_models(db)  # 기존 DB에도 새 모델 시드
         return  # 이미 시드됨
 
     now = datetime.utcnow()
@@ -388,3 +487,4 @@ def seed(db: Session):
 
     db.commit()
     print("[seed] PMIC 더미 데이터 삽입 완료.")
+    _seed_new_models(db)

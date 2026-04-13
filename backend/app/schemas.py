@@ -217,6 +217,60 @@ class SystemOverview(BaseModel):
     total_tests_today: int
 
 
+# ── WorkOrder ─────────────────────────────────────────────────────────────────
+
+class WorkOrderCreate(BaseModel):
+    title:           str
+    asset_id:        int
+    operator:        str
+    scheduled_start: datetime
+    scheduled_end:   datetime
+    test_plan:       Optional[str] = None
+    dut_id:          Optional[str] = None
+    priority:        str = "normal"
+    notes:           Optional[str] = None
+
+
+class WorkOrderUpdate(BaseModel):
+    status:          Optional[str]      = None
+    operator:        Optional[str]      = None
+    scheduled_start: Optional[datetime] = None
+    scheduled_end:   Optional[datetime] = None
+    notes:           Optional[str]      = None
+    priority:        Optional[str]      = None
+
+
+class WorkOrderOut(WorkOrderCreate):
+    id:         int
+    status:     str
+    created_at: datetime
+    asset_name: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+# ── TestSpec ──────────────────────────────────────────────────────────────────
+
+class TestSpecCreate(BaseModel):
+    product:          str
+    spec_version:     str = "v1.0"
+    corner:           Optional[str]   = None
+    measurement_name: str
+    spec_min:         Optional[float] = None
+    spec_max:         Optional[float] = None
+    unit:             Optional[str]   = None
+    created_by:       str
+    notes:            Optional[str]   = None
+
+
+class TestSpecOut(TestSpecCreate):
+    id:         int
+    is_active:  bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # ── Agent ─────────────────────────────────────────────────────────────────────
 
 class HeartbeatPayload(BaseModel):

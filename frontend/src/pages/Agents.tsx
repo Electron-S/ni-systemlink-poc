@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
 import {
   Table, Card, Tag, Badge, Drawer, Space, Typography,
-  Button, Descriptions, Row, Col, Statistic,
+  Button, Descriptions, Row, Col, Statistic, Tabs, Tooltip,
 } from 'antd'
-import { ReloadOutlined, RobotOutlined, DatabaseOutlined } from '@ant-design/icons'
-import api, { AgentNode, Asset } from '../api/client'
+import {
+  ReloadOutlined, RobotOutlined, DatabaseOutlined,
+  DiffOutlined, WarningOutlined, CheckCircleOutlined,
+} from '@ant-design/icons'
+import api, { AgentNode, Asset, AgentComparisonData } from '../api/client'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 
@@ -24,6 +27,8 @@ export default function Agents() {
   const [assets, setAssets]   = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<AgentNode | null>(null)
+  const [comparison, setComparison] = useState<AgentComparisonData | null>(null)
+  const [cmpLoading, setCmpLoading] = useState(false)
 
   const load = () => {
     setLoading(true)
@@ -36,12 +41,20 @@ export default function Agents() {
     }).catch(() => {}).finally(() => setLoading(false))
   }
 
-  useEffect(load, [])
+  const loadComparison = () => {
+    setCmpLoading(true)
+    api.get<AgentComparisonData>('/agents/comparison')
+      .then(r => setComparison(r.data))
+      .catch(() => {})
+      .finally(() => setCmpLoading(false))
+  }
+
+  useEffect(() => { load(); loadComparison() }, [])
 
   const assetMap = Object.fromEntries(assets.map(a => [a.id, a]))
-
   const onlineCnt  = agents.filter(a => a.status === 'online').length
   const offlineCnt = agents.filter(a => a.status === 'offline').length
+  const mismatchCount = comparison?.mismatch_packages.length ?? 0
 
   const columns = [
     {
@@ -88,8 +101,53 @@ export default function Agents() {
     },
   ]
 
+  // ── 비교 테이블 컬럼 ──────────────────────────────────────────────────────
+  const comparisonColumns = comparison ? [
+    {
+      title: '패키지', dataIndex: 'package_name', fixed: 'left' as const, width: 200,
+      render: (v: string) => {
+        const isMismatch = comparison.mismatch_packages.includes(v)
+        return (
+          <Space>
+            {isMismatch && <WarningOutlined style={{ color: '#ff4d4f' }} />}
+            <Text style={{ fontSize: 12, fontWeight: isMismatch ? 700 : 400 }}>{v}</Text>
+          </Space>
+        )
+      },
+    },
+    ...comparison.agents.map(a => ({
+      title: (
+        <div style={{ textAlign: 'center' as const }}>
+          <div style={{ fontSize: 11 }}>{a.hostname}</div>
+          <Badge
+            status={a.status === 'online' ? 'success' : 'default'}
+            text={<Text style={{ fontSize: 10 }}>{a.status === 'online' ? '온라인' : '오프라인'}</Text>}
+          />
+        </div>
+      ),
+      dataIndex: a.agent_id,
+      width: 140,
+      align: 'center' as const,
+      render: (ver: string | undefined) => {
+        if (!ver) return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>
+        return <Tag color="blue" style={{ fontSize: 11 }}>{ver}</Tag>
+      },
+    })),
+  ] : []
+
+  const comparisonData = comparison
+    ? comparison.package_names.map(pkg => {
+        const row: Record<string, unknown> = { package_name: pkg, key: pkg }
+        for (const a of comparison.agents) {
+          row[a.agent_id] = a.packages[pkg] ?? undefined
+        }
+        return row
+      })
+    : []
+
   return (
     <div>
+      {/* KPI */}
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={12} sm={6}>
           <Card size="small">
@@ -108,20 +166,83 @@ export default function Agents() {
             <Statistic title="오프라인" value={offlineCnt} valueStyle={{ color: '#8c8c8c' }} />
           </Card>
         </Col>
+        <Col xs={12} sm={6}>
+          <Card size="small">
+            <Statistic
+              title="버전 불일치 패키지"
+              value={mismatchCount}
+              valueStyle={{ color: mismatchCount > 0 ? '#ff4d4f' : '#52c41a' }}
+              prefix={mismatchCount > 0 ? <WarningOutlined /> : <CheckCircleOutlined />}
+            />
+          </Card>
+        </Col>
       </Row>
 
-      <Card extra={<Button icon={<ReloadOutlined />} onClick={load}>새로고침</Button>}>
-        <Table
-          dataSource={agents}
-          columns={columns}
-          rowKey="id"
-          loading={loading}
-          size="small"
-          pagination={{ pageSize: 15 }}
-          onRow={r => ({ onClick: () => setSelected(r), style: { cursor: 'pointer' } })}
-        />
-      </Card>
+      <Tabs
+        items={[
+          {
+            key: 'agents',
+            label: <Space><RobotOutlined />에이전트 목록</Space>,
+            children: (
+              <Card extra={<Button icon={<ReloadOutlined />} onClick={load}>새로고침</Button>}>
+                <Table
+                  dataSource={agents}
+                  columns={columns}
+                  rowKey="id"
+                  loading={loading}
+                  size="small"
+                  pagination={{ pageSize: 15 }}
+                  onRow={r => ({ onClick: () => setSelected(r), style: { cursor: 'pointer' } })}
+                />
+              </Card>
+            ),
+          },
+          {
+            key: 'comparison',
+            label: (
+              <Space>
+                <DiffOutlined />
+                설정 비교
+                {mismatchCount > 0 && (
+                  <Tag color="error" style={{ margin: 0, fontSize: 10 }}>{mismatchCount}건 불일치</Tag>
+                )}
+              </Space>
+            ),
+            children: (
+              <Card
+                title="크로스 시스템 패키지 버전 비교"
+                extra={<Button icon={<ReloadOutlined />} onClick={loadComparison}>새로고침</Button>}
+              >
+                {mismatchCount > 0 && (
+                  <div style={{ marginBottom: 12, padding: '8px 12px', background: '#fff2f0', border: '1px solid #ffccc7', borderRadius: 6 }}>
+                    <Space>
+                      <WarningOutlined style={{ color: '#ff4d4f' }} />
+                      <Text style={{ color: '#ff4d4f', fontSize: 13 }}>
+                        <b>{mismatchCount}개 패키지</b>의 버전이 에이전트 간 불일치합니다:&nbsp;
+                        {comparison?.mismatch_packages.join(', ')}
+                      </Text>
+                    </Space>
+                  </div>
+                )}
+                <Table
+                  dataSource={comparisonData}
+                  columns={comparisonColumns}
+                  rowKey="key"
+                  loading={cmpLoading}
+                  size="small"
+                  pagination={false}
+                  scroll={{ x: true }}
+                  rowClassName={(r: any) =>
+                    comparison?.mismatch_packages.includes(r.package_name) ? 'row-urgent' : ''
+                  }
+                />
+              </Card>
+            ),
+          },
+        ]}
+      />
 
+      {/* 에이전트 상세 Drawer */}
       <Drawer
         title={
           <Space>

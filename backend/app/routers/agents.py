@@ -15,6 +15,42 @@ def list_agents(db: Session = Depends(get_db)):
     return db.query(models.AgentNode).order_by(models.AgentNode.last_heartbeat.desc()).all()
 
 
+# ── Feature 6: 크로스 시스템 설정 비교 ── (must be BEFORE /{agent_id})
+@router.get("/comparison")
+def get_comparison(db: Session = Depends(get_db)):
+    """에이전트별 패키지 버전 나란히 비교 — 버전 불일치 항목 강조."""
+    agents = db.query(models.AgentNode).order_by(models.AgentNode.hostname).all()
+
+    all_packages: set = set()
+    for a in agents:
+        for inv in a.inventory:
+            all_packages.add(inv.package_name)
+    package_names = sorted(all_packages)
+
+    agent_data = [
+        {
+            "agent_id":  a.agent_id,
+            "hostname":  a.hostname,
+            "status":    a.status,
+            "version":   a.version,
+            "packages":  {inv.package_name: inv.version for inv in a.inventory},
+        }
+        for a in agents
+    ]
+
+    mismatch_packages = []
+    for pkg in package_names:
+        versions = {ag["packages"].get(pkg) for ag in agent_data if ag["packages"].get(pkg)}
+        if len(versions) > 1:
+            mismatch_packages.append(pkg)
+
+    return {
+        "agents":             agent_data,
+        "package_names":      package_names,
+        "mismatch_packages":  mismatch_packages,
+    }
+
+
 @router.get("/{agent_id}", response_model=schemas.AgentOut)
 def get_agent(agent_id: str, db: Session = Depends(get_db)):
     node = db.query(models.AgentNode).filter(models.AgentNode.agent_id == agent_id).first()

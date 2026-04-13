@@ -226,6 +226,16 @@ export default function TestResults() {
               onSearch={v => setDutFilter(v)} onClear={() => setDutFilter('')} />
             <RangePicker size="small" style={{ width: 220 }}
               onChange={(_, s) => setDateRange(s[0] && s[1] ? [s[0], s[1]] : null)} />
+            <Button
+              icon={<PrinterOutlined />}
+              onClick={() => {
+                const params = new URLSearchParams({ days: String(days) })
+                if (assetFilter) params.set('asset_id', String(assetFilter))
+                window.open(`/api/test-results/report?${params.toString()}`, '_blank')
+              }}
+            >
+              리포트
+            </Button>
           </Space>
         }
       >

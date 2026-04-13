@@ -6,7 +6,7 @@ import {
   CloudUploadOutlined, ExperimentOutlined, BellOutlined,
   RobotOutlined, AuditOutlined, DotChartOutlined,
   ScheduleOutlined, LineChartOutlined, SafetyCertificateOutlined,
-  ToolOutlined, BarChartOutlined,
+  BarChartOutlined,
 } from '@ant-design/icons'
 import Dashboard           from './pages/Dashboard'
 import Assets              from './pages/Assets'
@@ -25,20 +25,73 @@ import { WSContext, useWebSocketProvider, useRealtimeMetrics } from './hooks/use
 const { Sider, Header, Content } = Layout
 const { Title } = Typography
 
-const NAV = [
-  { key: '/',             label: '대시보드',        icon: <DashboardOutlined /> },
-  { key: '/assets',       label: '자산 관리',        icon: <DeploymentUnitOutlined /> },
-  { key: '/work-orders',  label: '작업 지시',        icon: <ScheduleOutlined /> },
-  { key: '/deployments',  label: '소프트웨어 배포',  icon: <CloudUploadOutlined /> },
-  { key: '/test-results', label: '테스트 결과',      icon: <ExperimentOutlined /> },
-  { key: '/fpy',          label: 'FPY / Pareto',    icon: <BarChartOutlined /> },
-  { key: '/parametric',   label: '파라메트릭 / SPC', icon: <DotChartOutlined /> },
-  { key: '/utilization',  label: '장비 가동률',      icon: <LineChartOutlined /> },
-  { key: '/specs',        label: '규격 관리',        icon: <SafetyCertificateOutlined /> },
-  { key: '/alarms',       label: '알람',             icon: <BellOutlined /> },
-  { key: '/agents',       label: 'PXI 에이전트',    icon: <RobotOutlined /> },
-  { key: '/audit-logs',   label: '감사 로그',        icon: <AuditOutlined /> },
-]
+// ── 페이지 메타: 경로 → 레이블 (헤더 타이틀용) ───────────────────────────────
+const PAGE_LABELS: Record<string, string> = {
+  '/':             '대시보드',
+  '/assets':       '자산 목록',
+  '/agents':       'PXI 에이전트',
+  '/work-orders':  '작업 지시',
+  '/test-results': '테스트 결과',
+  '/fpy':          'FPY / Failure Pareto',
+  '/parametric':   '파라메트릭 / SPC',
+  '/utilization':  '장비 가동률',
+  '/deployments':  '소프트웨어 배포',
+  '/alarms':       '알람',
+  '/specs':        '규격 관리',
+  '/audit-logs':   '감사 로그',
+}
+
+// ── 그룹화된 메뉴 정의 ────────────────────────────────────────────────────────
+function buildMenuItems(pathname: string) {
+  const item = (key: string, icon: React.ReactNode, label: string) => ({
+    key,
+    icon,
+    label: <NavLink to={key}>{label}</NavLink>,
+  })
+
+  return [
+    item('/', <DashboardOutlined />, '대시보드'),
+
+    {
+      type: 'group' as const,
+      label: 'SYSTEMS',
+      children: [
+        item('/assets',      <DeploymentUnitOutlined />, '자산 목록'),
+        item('/agents',      <RobotOutlined />,          'PXI 에이전트'),
+        item('/work-orders', <ScheduleOutlined />,       '작업 지시'),
+      ],
+    },
+
+    {
+      type: 'group' as const,
+      label: 'TEST MANAGEMENT',
+      children: [
+        item('/test-results', <ExperimentOutlined />,       '테스트 결과'),
+        item('/fpy',          <BarChartOutlined />,         'FPY / Pareto'),
+        item('/parametric',   <DotChartOutlined />,         '파라메트릭 / SPC'),
+        item('/utilization',  <LineChartOutlined />,        '장비 가동률'),
+      ],
+    },
+
+    {
+      type: 'group' as const,
+      label: 'OPERATIONS',
+      children: [
+        item('/deployments', <CloudUploadOutlined />, '소프트웨어 배포'),
+        item('/alarms',      <BellOutlined />,        '알람'),
+      ],
+    },
+
+    {
+      type: 'group' as const,
+      label: 'CONFIGURATION',
+      children: [
+        item('/specs',      <SafetyCertificateOutlined />, '규격 관리'),
+        item('/audit-logs', <AuditOutlined />,             '감사 로그'),
+      ],
+    },
+  ]
+}
 
 function AppLayout() {
   const location = useLocation()
@@ -47,7 +100,7 @@ function AppLayout() {
   const lastEventId = useRef<string | null>(null)
   const [api, contextHolder] = notification.useNotification()
 
-  const current = NAV.find(n => n.key === location.pathname)?.label ?? '대시보드'
+  const pageTitle = PAGE_LABELS[location.pathname] ?? '대시보드'
 
   useEffect(() => {
     if (events.length === 0) return
@@ -56,7 +109,6 @@ function AppLayout() {
     lastEventId.current = latest.id
 
     const d = latest.data
-
     if (latest.event_type === 'alarm_triggered' && d.severity === 'critical') {
       api.error({
         message: '심각 알람 발생',
@@ -93,14 +145,17 @@ function AppLayout() {
           zIndex: 100,
           display: 'flex',
           flexDirection: 'column',
+          overflowY: 'auto',
+          overflowX: 'hidden',
         }}
       >
-        <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+        {/* 로고 */}
+        <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 24 }}>⚙️</span>
+            <span style={{ fontSize: 22 }}>⚙️</span>
             <div>
               <div style={{ color: '#fff', fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>NI SystemLink</div>
-              <div style={{ color: '#1890ff', fontSize: 11 }}>내재화 PoC v0.2</div>
+              <div style={{ color: '#1890ff', fontSize: 11 }}>내재화 PoC v0.3</div>
             </div>
           </div>
         </div>
@@ -109,18 +164,41 @@ function AppLayout() {
           theme="dark"
           mode="inline"
           selectedKeys={[location.pathname]}
-          style={{ marginTop: 8, flex: 1, borderRight: 0 }}
-          items={NAV.map(n => ({
-            key: n.key,
-            icon: n.icon,
-            label: <NavLink to={n.key}>{n.label}</NavLink>,
-          }))}
+          style={{
+            flex: 1,
+            borderRight: 0,
+            paddingBottom: 16,
+            // 그룹 라벨 스타일 오버라이드
+          }}
+          items={buildMenuItems(location.pathname)}
         />
 
-        <div style={{ padding: '12px 24px', borderTop: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.45)', fontSize: 11 }}>
+        <div style={{
+          padding: '10px 24px',
+          borderTop: '1px solid rgba(255,255,255,0.08)',
+          color: 'rgba(255,255,255,0.35)',
+          fontSize: 10,
+          flexShrink: 0,
+        }}>
           Server 에디션 기준 내재화 검토
         </div>
       </Sider>
+
+      {/* 그룹 라벨 CSS 인젝션 */}
+      <style>{`
+        .ant-menu-item-group-title {
+          color: rgba(255,255,255,0.3) !important;
+          font-size: 10px !important;
+          font-weight: 700 !important;
+          letter-spacing: 0.08em !important;
+          padding: 14px 24px 4px !important;
+          user-select: none;
+        }
+        .ant-menu-item-group:not(:first-child) .ant-menu-item-group-title {
+          border-top: 1px solid rgba(255,255,255,0.06);
+          margin-top: 4px;
+        }
+      `}</style>
 
       <Layout style={{ marginLeft: 220 }}>
         <Header style={{
@@ -134,7 +212,7 @@ function AppLayout() {
           top: 0,
           zIndex: 99,
         }}>
-          <Title level={4} style={{ margin: 0, color: token.colorTextHeading }}>{current}</Title>
+          <Title level={4} style={{ margin: 0, color: token.colorTextHeading }}>{pageTitle}</Title>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, color: token.colorTextSecondary, fontSize: 13 }}>
             <Badge
               status={connected ? 'processing' : 'error'}
